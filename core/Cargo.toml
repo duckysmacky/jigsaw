@@ -1,0 +1,9 @@
+[package]
+name = "jigsaw-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+jigsaw-bencode = { workspace = true }
