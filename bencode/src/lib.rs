@@ -24,12 +24,14 @@ impl std::fmt::Debug for ByteString {
 	}
 }
 
+type BencodeDict = BTreeMap<ByteString, BencodeElement>;
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum BencodeElem {
+enum BencodeElement {
 	Int(i64),
 	ByteString(ByteString),
-	List(Vec<BencodeElem>),
-	Dict(BTreeMap<ByteString, BencodeElem>),
+	List(Vec<BencodeElement>),
+	Dict(BencodeDict),
 }
 
 #[derive(Error, Debug)]
@@ -48,26 +50,26 @@ enum BencodeError {
 	NegativeStringLength,
 }
 
-struct Bencode<'a> {
+struct BencodeParser<'a> {
 	idx: usize,
-	file: &'a [u8]
+	bytes: &'a [u8]
 }
 
-impl<'a> Bencode<'a> {
-	pub fn new(file: &'a [u8]) -> Bencode<'a> {
-		Bencode { idx: 0, file: file }
+impl<'a> BencodeParser<'a> {
+	pub fn new(file: &'a [u8]) -> BencodeParser<'a> {
+		BencodeParser { idx: 0, bytes: file }
 	}
 
 	fn peek(&self) -> Result<u8, BencodeError> {
-		if self.idx >= self.file.len() {
+		if self.idx >= self.bytes.len() {
 			return Err(BencodeError::UnexpectedEOF);
 		}
-		Ok(self.file[self.idx])
+		Ok(self.bytes[self.idx])
 	}
 
 	fn advance(&mut self) -> Result<(), BencodeError> {
 		self.idx += 1;
-		if self.idx > self.file.len() {
+		if self.idx > self.bytes.len() {
 			return Err(BencodeError::UnexpectedEOF);
 		}
 		Ok(())
@@ -75,25 +77,25 @@ impl<'a> Bencode<'a> {
 
 	fn advance_by(&mut self, amt: usize) -> Result<(), BencodeError> {
 		self.idx += amt;
-		if self.idx > self.file.len() {
+		if self.idx > self.bytes.len() {
 			return Err(BencodeError::UnexpectedEOF);
 		}
 		Ok(())
 	}
 
-	fn parse_elem(&mut self) -> Result<BencodeElem, BencodeError> {
+	fn parse_elem(&mut self) -> Result<BencodeElement, BencodeError> {
 		match self.peek()? {
-			b'd' => { Ok(BencodeElem::Dict(self.parse_dict()?)) },
-			b'l' => { Ok(BencodeElem::List(self.parse_list()?)) },
-			b'i' => { Ok(BencodeElem::Int(self.parse_int()?)) },
-			b'0'..=b'9' => { Ok(BencodeElem::ByteString(self.parse_string()?)) }
+			b'd' => { Ok(BencodeElement::Dict(self.parse_dict()?)) },
+			b'l' => { Ok(BencodeElement::List(self.parse_list()?)) },
+			b'i' => { Ok(BencodeElement::Int(self.parse_int()?)) },
+			b'0'..=b'9' => { Ok(BencodeElement::ByteString(self.parse_string()?)) }
 			// TODO: error out
 			_ => { Err(BencodeError::UnexpectedCharacter) }
 		}
 	}
 
-	pub fn parse_dict(&mut self) -> Result<BTreeMap<ByteString, BencodeElem>, BencodeError> {
-		let mut res: BTreeMap<ByteString, BencodeElem> = BTreeMap::new();
+	pub fn parse_dict(&mut self) -> Result<BencodeDict, BencodeError> {
+		let mut res: BencodeDict = BTreeMap::new();
 
 		self.advance()?; // from 'd'
 		while self.peek()? != b'e' {
@@ -108,9 +110,9 @@ impl<'a> Bencode<'a> {
 		Ok(res)
 	}
 
-	fn parse_list(&mut self) -> Result<Vec<BencodeElem>, BencodeError> {
+	fn parse_list(&mut self) -> Result<Vec<BencodeElement>, BencodeError> {
 		self.advance()?; // from 'l'
-		let mut res: Vec<BencodeElem> = Vec::new();
+		let mut res: Vec<BencodeElement> = Vec::new();
 		while self.peek()? != b'e' {
 			res.push(self.parse_elem()?);
 		}
@@ -137,7 +139,7 @@ impl<'a> Bencode<'a> {
 
 		if let Ok(strlen) = usize::from_str_radix(&digits, 10) {
 			self.advance()?; // from ':'
-			let res: ByteString = ByteString(self.file[self.idx..self.idx + strlen].to_vec());
+			let res: ByteString = ByteString(self.bytes[self.idx..self.idx + strlen].to_vec());
 			self.advance_by(strlen)?;
 
 			return Ok(res);
@@ -172,12 +174,12 @@ mod tests {
 	#[test]
 	fn correct_decoding() {
 		let bencoded = b"d3:bar4:spam3:fooi-42e4:listli43ei44ei-73eee";
-		let mut decoder: Bencode = Bencode::new(bencoded);
+		let mut decoder: BencodeParser = BencodeParser::new(bencoded);
 
-		let mut expected: BTreeMap<ByteString, BencodeElem> = BTreeMap::new();
-		expected.insert("bar".into(), BencodeElem::ByteString("spam".into()));
-		expected.insert("foo".into(), BencodeElem::Int(-42));
-		expected.insert("list".into(), BencodeElem::List(vec![BencodeElem::Int(43), BencodeElem::Int(44), BencodeElem::Int(-73)]));
+		let mut expected: BTreeMap<ByteString, BencodeElement> = BTreeMap::new();
+		expected.insert("bar".into(), BencodeElement::ByteString("spam".into()));
+		expected.insert("foo".into(), BencodeElement::Int(-42));
+		expected.insert("list".into(), BencodeElement::List(vec![BencodeElement::Int(43), BencodeElement::Int(44), BencodeElement::Int(-73)]));
 
 		assert_eq!(expected, decoder.parse_dict().unwrap());
 	}
