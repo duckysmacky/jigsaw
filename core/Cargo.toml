@@ -6,4 +6,12 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+# workspace
 jigsaw-bencode = { workspace = true }
+
+tokio = { workspace = true, features = ["full"] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+ureq = { workspace = true }
+rand = { workspace = true }
+thiserror = { workspace = true }

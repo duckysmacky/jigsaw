@@ -6,4 +6,11 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+# workspace
 jigsaw-core = { workspace = true }
+
+tokio = { workspace = true, features = ["full"] }
+clap = { workspace = true, features = ["derive"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
