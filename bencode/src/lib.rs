@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use thiserror::Error;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
-struct ByteString(Vec<u8>);
+pub struct ByteString(Vec<u8>);
 
 impl From<&str> for ByteString {
 	fn from(value: &str) -> Self {
@@ -24,10 +24,10 @@ impl std::fmt::Debug for ByteString {
 	}
 }
 
-type BencodeDict = BTreeMap<ByteString, BencodeElement>;
+pub type BencodeDict = BTreeMap<ByteString, BencodeElement>;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum BencodeElement {
+pub enum BencodeElement {
 	Int(i64),
 	ByteString(ByteString),
 	List(Vec<BencodeElement>),
@@ -35,7 +35,7 @@ enum BencodeElement {
 }
 
 #[derive(Error, Debug)]
-enum BencodeError {
+pub enum Error {
 	#[error("Unexpected EOF while reading bencoded file.")]
 	UnexpectedEOF,
 	#[error("Unexpected character while reading bencoded file.")]
@@ -50,7 +50,7 @@ enum BencodeError {
 	NegativeStringLength,
 }
 
-struct BencodeParser<'a> {
+pub struct BencodeParser<'a> {
 	idx: usize,
 	bytes: &'a [u8]
 }
@@ -60,48 +60,48 @@ impl<'a> BencodeParser<'a> {
 		BencodeParser { idx: 0, bytes: file }
 	}
 
-	fn peek(&self) -> Result<u8, BencodeError> {
+	fn peek(&self) -> Result<u8, Error> {
 		if self.idx >= self.bytes.len() {
-			return Err(BencodeError::UnexpectedEOF);
+			return Err(Error::UnexpectedEOF);
 		}
 		Ok(self.bytes[self.idx])
 	}
 
-	fn advance(&mut self) -> Result<(), BencodeError> {
+	fn advance(&mut self) -> Result<(), Error> {
 		self.idx += 1;
 		if self.idx > self.bytes.len() {
-			return Err(BencodeError::UnexpectedEOF);
+			return Err(Error::UnexpectedEOF);
 		}
 		Ok(())
 	}
 
-	fn advance_by(&mut self, amt: usize) -> Result<(), BencodeError> {
+	fn advance_by(&mut self, amt: usize) -> Result<(), Error> {
 		self.idx += amt;
 		if self.idx > self.bytes.len() {
-			return Err(BencodeError::UnexpectedEOF);
+			return Err(Error::UnexpectedEOF);
 		}
 		Ok(())
 	}
 
-	fn parse_elem(&mut self) -> Result<BencodeElement, BencodeError> {
+	fn parse_elem(&mut self) -> Result<BencodeElement, Error> {
 		match self.peek()? {
 			b'd' => { Ok(BencodeElement::Dict(self.parse_dict()?)) },
 			b'l' => { Ok(BencodeElement::List(self.parse_list()?)) },
 			b'i' => { Ok(BencodeElement::Int(self.parse_int()?)) },
 			b'0'..=b'9' => { Ok(BencodeElement::ByteString(self.parse_string()?)) }
 			// TODO: error out
-			_ => { Err(BencodeError::UnexpectedCharacter) }
+			_ => { Err(Error::UnexpectedCharacter) }
 		}
 	}
 
-	pub fn parse_dict(&mut self) -> Result<BencodeDict, BencodeError> {
+	pub fn parse_dict(&mut self) -> Result<BencodeDict, Error> {
 		let mut res: BencodeDict = BTreeMap::new();
 
 		self.advance()?; // from 'd'
 		while self.peek()? != b'e' {
 			let key: ByteString = self.parse_string()?;
 			if res.contains_key(&key) {
-				return Err(BencodeError::DuplicateKey(key.into()));
+				return Err(Error::DuplicateKey(key.into()));
 			}
 			res.insert(key, self.parse_elem()?);
 		}
@@ -110,7 +110,7 @@ impl<'a> BencodeParser<'a> {
 		Ok(res)
 	}
 
-	fn parse_list(&mut self) -> Result<Vec<BencodeElement>, BencodeError> {
+	fn parse_list(&mut self) -> Result<Vec<BencodeElement>, Error> {
 		self.advance()?; // from 'l'
 		let mut res: Vec<BencodeElement> = Vec::new();
 		while self.peek()? != b'e' {
@@ -121,7 +121,7 @@ impl<'a> BencodeParser<'a> {
 		Ok(res)
 	}
 
-	fn parse_string(&mut self) -> Result<ByteString, BencodeError> {
+	fn parse_string(&mut self) -> Result<ByteString, Error> {
 		let mut digits: String = "".to_string();
 		while self.peek()? != b':' {
 			digits.push(self.peek()? as char);
@@ -129,12 +129,12 @@ impl<'a> BencodeParser<'a> {
 		}
 
 		if digits.len() == 0 {
-			return Err(BencodeError::EmptyStringLength);
+			return Err(Error::EmptyStringLength);
 		}
 
 		// unwrap safety: we checked for empty string
 		if digits.chars().nth(0).unwrap() == '-' {
-			return Err(BencodeError::NegativeStringLength);
+			return Err(Error::NegativeStringLength);
 		}
 
 		if let Ok(strlen) = usize::from_str_radix(&digits, 10) {
@@ -145,10 +145,10 @@ impl<'a> BencodeParser<'a> {
 			return Ok(res);
 		}
 
-		Err(BencodeError::InvalidInteger(digits))
+		Err(Error::InvalidInteger(digits))
 	}
 
-	fn parse_int(&mut self) -> Result<i64, BencodeError> {
+	fn parse_int(&mut self) -> Result<i64, Error> {
 		self.advance()?; // from 'i'
 		let mut digits: String = "".to_string();
 		while self.peek()? != b'e' {
@@ -161,7 +161,7 @@ impl<'a> BencodeParser<'a> {
 			return Ok(val);
 		}
 
-		Err(BencodeError::InvalidInteger(digits))
+		Err(Error::InvalidInteger(digits))
 	}
 }
 
