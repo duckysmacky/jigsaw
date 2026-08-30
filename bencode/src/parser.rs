@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{BencodeElement, BencodeDict, ByteString};
+use crate::{BencodeElement, BencodeDict, BencodeList, ByteString};
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -28,8 +28,10 @@ impl<'a> BencodeParser<'a> {
 		BencodeParser { idx: 0, bytes }
 	}
 
-	pub fn parse(&mut self) -> Result<BencodeDict, Error> {
-        self.parse_dict()
+	pub fn parse(&mut self) -> Result<BencodeElement, Error> {
+        // TODO: expect any element when parsing, not just dict
+        let dict = self.parse_dict()?;
+        Ok(BencodeElement::Dict(dict))
     }
 
 	fn peek(&self) -> Result<u8, Error> {
@@ -67,24 +69,27 @@ impl<'a> BencodeParser<'a> {
 	}
 
 	fn parse_dict(&mut self) -> Result<BencodeDict, Error> {
-		let mut res: BencodeDict = BencodeDict::new();
+		let mut dict = BencodeDict::new();
 
 		self.advance()?; // from 'd'
 		while self.peek()? != b'e' {
 			let key: ByteString = self.parse_string()?;
-			if res.contains_key(&key) {
-				return Err(Error::DuplicateKey(key.into()));
+
+			if dict.contains_key(&key) {
+				return Err(Error::DuplicateKey(key.to_string()));
 			}
-			res.insert(key, self.parse_elem()?);
+
+			dict.insert(key, self.parse_elem()?);
 		}
 		self.advance()?; // from 'e'
 
-		Ok(res)
+		Ok(dict)
 	}
 
-	fn parse_list(&mut self) -> Result<Vec<BencodeElement>, Error> {
+	fn parse_list(&mut self) -> Result<BencodeList, Error> {
 		self.advance()?; // from 'l'
-		let mut res: Vec<BencodeElement> = Vec::new();
+		let mut res = BencodeList::new();
+
 		while self.peek()? != b'e' {
 			res.push(self.parse_elem()?);
 		}
@@ -111,7 +116,7 @@ impl<'a> BencodeParser<'a> {
 
 		if let Ok(strlen) = usize::from_str_radix(&digits, 10) {
 			self.advance()?; // from ':'
-			let res: ByteString = ByteString(self.bytes[self.idx..self.idx + strlen].to_vec());
+			let res: ByteString = ByteString::from(self.bytes[self.idx..self.idx + strlen].to_vec());
 			self.advance_by(strlen)?;
 
 			return Ok(res);
@@ -140,20 +145,19 @@ impl<'a> BencodeParser<'a> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-    
-    use std::collections::BTreeMap;
 
 	// TODO: add more tests
 
 	#[test]
 	fn correct_decoding() {
 		let bencoded = b"d3:bar4:spam3:fooi-42e4:listli43ei44ei-73eee";
-		let mut decoder: BencodeParser = BencodeParser::new(bencoded);
+		let mut decoder = BencodeParser::new(bencoded);
 
-		let mut expected: BTreeMap<ByteString, BencodeElement> = BTreeMap::new();
-		expected.insert("bar".into(), BencodeElement::ByteString("spam".into()));
-		expected.insert("foo".into(), BencodeElement::Int(-42));
-		expected.insert("list".into(), BencodeElement::List(vec![BencodeElement::Int(43), BencodeElement::Int(44), BencodeElement::Int(-73)]));
+		let mut dict = BencodeDict::new();
+		dict.insert("bar".into(), BencodeElement::ByteString("spam".into()));
+		dict.insert("foo".into(), BencodeElement::Int(-42));
+		dict.insert("list".into(), BencodeElement::List(BencodeList::from(vec![BencodeElement::Int(43), BencodeElement::Int(44), BencodeElement::Int(-73)])));
+        let expected = BencodeElement::Dict(dict);
 
 		assert_eq!(expected, decoder.parse().unwrap());
 	}
