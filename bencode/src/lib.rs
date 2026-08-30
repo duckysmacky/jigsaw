@@ -1,5 +1,8 @@
 // using a BTreeMap because it keeps keys in lexicographical order
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    fmt,
+};
 
 use thiserror::Error;
 
@@ -18,10 +21,22 @@ impl From<ByteString> for String {
 	}
 }
 
-impl std::fmt::Debug for ByteString {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.write_fmt(format_args!("{}", String::from_utf8_lossy(&self.0)))
+impl fmt::Debug for ByteString {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let str = String::from_utf8(self.0.clone())
+            .unwrap_or_else(|_| hex::encode(&self.0));
+
+        write!(f, "{}", str)
 	}
+}
+
+impl fmt::Display for ByteString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let str = String::from_utf8(self.0.clone())
+            .unwrap_or_else(|_| hex::encode(&self.0));
+
+        write!(f, "{}", str)
+    }
 }
 
 pub type BencodeDict = BTreeMap<ByteString, BencodeElement>;
@@ -56,9 +71,13 @@ pub struct BencodeParser<'a> {
 }
 
 impl<'a> BencodeParser<'a> {
-	pub fn new(file: &'a [u8]) -> BencodeParser<'a> {
-		BencodeParser { idx: 0, bytes: file }
+	pub fn new(bytes: &'a [u8]) -> BencodeParser<'a> {
+		BencodeParser { idx: 0, bytes }
 	}
+
+	pub fn parse(&mut self) -> Result<BencodeDict, Error> {
+        self.parse_dict()
+    }
 
 	fn peek(&self) -> Result<u8, Error> {
 		if self.idx >= self.bytes.len() {
@@ -94,7 +113,7 @@ impl<'a> BencodeParser<'a> {
 		}
 	}
 
-	pub fn parse_dict(&mut self) -> Result<BencodeDict, Error> {
+	fn parse_dict(&mut self) -> Result<BencodeDict, Error> {
 		let mut res: BencodeDict = BTreeMap::new();
 
 		self.advance()?; // from 'd'
@@ -181,6 +200,6 @@ mod tests {
 		expected.insert("foo".into(), BencodeElement::Int(-42));
 		expected.insert("list".into(), BencodeElement::List(vec![BencodeElement::Int(43), BencodeElement::Int(44), BencodeElement::Int(-73)]));
 
-		assert_eq!(expected, decoder.parse_dict().unwrap());
+		assert_eq!(expected, decoder.parse().unwrap());
 	}
 }
