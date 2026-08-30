@@ -6,4 +6,5 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+hex = { workspace = true }
 thiserror.workspace = true
