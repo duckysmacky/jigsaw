@@ -73,7 +73,7 @@ impl<'a> BencodeParser<'a> {
 
 		self.advance()?; // from 'd'
 		while self.peek()? != b'e' {
-			let key: ByteString = self.parse_string()?;
+			let key = self.parse_string()?;
 
 			if dict.contains_key(&key) {
 				return Err(Error::DuplicateKey(key.to_string()));
@@ -88,18 +88,18 @@ impl<'a> BencodeParser<'a> {
 
 	fn parse_list(&mut self) -> Result<BencodeList, Error> {
 		self.advance()?; // from 'l'
-		let mut res = BencodeList::new();
+		let mut list = BencodeList::new();
 
 		while self.peek()? != b'e' {
-			res.push(self.parse_elem()?);
+			list.push(self.parse_elem()?);
 		}
 		self.advance()?; // from 'e'
 
-		Ok(res)
+		Ok(list)
 	}
 
 	fn parse_string(&mut self) -> Result<ByteString, Error> {
-		let mut digits: String = "".to_string();
+		let mut digits = "".to_string();
 		while self.peek()? != b':' {
 			digits.push(self.peek()? as char);
 			self.advance()?;
@@ -116,10 +116,10 @@ impl<'a> BencodeParser<'a> {
 
 		if let Ok(strlen) = usize::from_str_radix(&digits, 10) {
 			self.advance()?; // from ':'
-			let res: ByteString = ByteString::from(self.bytes[self.idx..self.idx + strlen].to_vec());
+			let str = ByteString::from(self.bytes[self.idx..self.idx + strlen].to_vec());
 			self.advance_by(strlen)?;
 
-			return Ok(res);
+			return Ok(str);
 		}
 
 		Err(Error::InvalidInteger(digits))
@@ -127,7 +127,8 @@ impl<'a> BencodeParser<'a> {
 
 	fn parse_int(&mut self) -> Result<i64, Error> {
 		self.advance()?; // from 'i'
-		let mut digits: String = "".to_string();
+		let mut digits = "".to_string();
+
 		while self.peek()? != b'e' {
 			digits.push(self.peek()? as char);
 			self.advance()?;
