@@ -19,9 +19,9 @@ impl ByteString {
 }
 
 impl From<&str> for ByteString {
-	fn from(value: &str) -> Self {
-		ByteString(value.as_bytes().to_vec())
-	}
+    fn from(value: &str) -> Self {
+        ByteString(value.as_bytes().to_vec())
+    }
 }
 
 impl From<Vec<u8>> for ByteString {
@@ -182,10 +182,10 @@ impl fmt::Display for BencodeDict {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum BencodeElement {
-	Int(i64),
-	ByteString(ByteString),
-	List(BencodeList),
-	Dict(BencodeDict),
+    Int(i64),
+    ByteString(ByteString),
+    List(BencodeList),
+    Dict(BencodeDict),
 }
 
 impl BencodeElement {
@@ -200,7 +200,7 @@ impl BencodeElement {
 }
 
 impl fmt::Display for BencodeElement {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_indent(f, 0)
     }
 }
