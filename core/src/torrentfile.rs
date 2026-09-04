@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use jigsaw_bencode::BencodeElement;
 use thiserror::Error;
 
@@ -9,8 +11,8 @@ use crate::bencode::BencodeDict;
 pub enum StructureError {
     #[error("Field '{0}' is of wrong type.")]
     WrongType(String),
-    #[error("Dictionary '{0}' is missing required key '{1}'.")]
-    RequiredKeyMissing(String, String),
+    #[error("Missing required key '{0}'.")]
+    RequiredKeyMissing(String),
     #[error("Pieces bytestring length isn't divisible by 20.")]
     PiecesBytesLengthError,
     #[error("Length value is negative.")]
@@ -24,50 +26,50 @@ pub struct TorrentFile {
 
     // TODO: add announce-list at some point
 
-    // these aren't required keys, maybe put them in an Option
-    pub comment: String,
-    pub created_by: String,
-    pub creation_date: u64,
+    pub comment: Option<String>,
+    pub created_by: Option<String>,
+    pub creation_date: Option<u64>,
 }
 
 impl TorrentFile {
-    pub fn new() -> TorrentFile {
-        TorrentFile {
-            announce: "".to_string(),
-            info: Info::new(),
-            comment: "".to_string(),
-            created_by: "".to_string(),
-            creation_date: 0,
-        }
-    }
+    pub fn from_bencoded(dict: BencodeDict) -> Result<Self, StructureError> {
+        let announce = match dict.get(&"announce".into()) {
+            Some(BencodeElement::ByteString(announce)) => announce.to_string(),
+            Some(_) => return Err(StructureError::WrongType("announce".to_string())),
+            None => return Err(StructureError::RequiredKeyMissing("announce".to_string())),
+        };
 
-    pub fn from_bencoded(dict: &BencodeDict) -> Result<TorrentFile, StructureError> {
-        let mut file = TorrentFile::new();
+        let info = match dict.get(&"info".into()) {
+            Some(BencodeElement::Dict(info_dict)) => Info::from_bencoded(info_dict)?,
+            Some(_) => return Err(StructureError::WrongType("info".to_string())),
+            None => return Err(StructureError::RequiredKeyMissing("info".to_string()))
+        };
 
-        if let BencodeElement::ByteString(announce) = &dict[&"announce".into()] {
-            file.announce = announce.to_string();
-        } else {
-            return Err(StructureError::WrongType("announce".to_string()));
-        }
+        let comment = match dict.get(&"comment".into()) {
+            Some(BencodeElement::ByteString(comment)) => Some(comment.to_string()),
+            Some(_) => return Err(StructureError::WrongType("comment".to_string())),
+            None => None,
+        };
 
-        if let BencodeElement::Dict(info_dict) = &dict[&"info".into()] {
-            file.info = Info::from_bencoded(info_dict)?;
-        } else {
-            return Err(StructureError::WrongType("info".to_string()));
-        }
+        let created_by = match dict.get(&"created by".into()) {
+            Some(BencodeElement::ByteString(created_by)) => Some(created_by.to_string()),
+            Some(_) => return Err(StructureError::WrongType("created by".to_string())),
+            None => None,
+        };
 
-        // won't error out if wrong type, will just ignore since these aren't required keys
-        if dict.contains_key(&"comment".into()) && let BencodeElement::ByteString(comment) = &dict[&"comment".into()] {
-            file.comment = comment.to_string();
-        }
-        if dict.contains_key(&"created by".into()) && let BencodeElement::ByteString(created_by) = &dict[&"created by".into()] {
-            file.created_by = created_by.to_string();
-        }
-        if dict.contains_key(&"creation date".into()) && let BencodeElement::Int(creation_date) = dict[&"creation date".into()] {
-            file.creation_date = creation_date as u64;
-        }
+        let creation_date = match dict.get(&"creation date".into()) {
+            Some(BencodeElement::Int(creation_date)) => Some(*creation_date as u64),
+            Some(_) => return Err(StructureError::WrongType("creation date".to_string())),
+            None => None,
+        };
 
-        return Ok(file);
+        return Ok(Self {
+            announce,
+            info,
+            comment,
+            created_by,
+            creation_date
+        });
     }
 }
 
@@ -80,111 +82,99 @@ pub struct Info {
 }
 
 impl Info {
-    pub fn new() -> Info {
-        Info {
-            name: "".to_string(),
-            file: FileMode::SingleFile { length: 0 },
-            piece_length: 0,
-            pieces_hashes: Vec::new()
-        }
-    }
-
-    pub fn from_bencoded(info_dict: &BencodeDict) -> Result<Info, StructureError> {
-        let mut info = Info::new();
-
-        // required keys
-        for key in ["name", "pieces", "piece length"] {
-            if !info_dict.contains_key(&key.into()) {
-                return Err(StructureError::RequiredKeyMissing("info".to_string(), key.to_string()));
-            }
-        }
+    pub fn from_bencoded(info_dict: &BencodeDict) -> Result<Self, StructureError> {
         // either one or the other should be present
         if !info_dict.contains_key(&"files".into()) && !info_dict.contains_key(&"length".into()) {
-            return Err(StructureError::RequiredKeyMissing("info".to_string(), "files/length".to_string()));
+            return Err(StructureError::RequiredKeyMissing("files/length".to_string()));
         }
 
-        if let BencodeElement::ByteString(name) = &info_dict[&"name".into()] {
-            info.name = name.to_string();
-        } else {
-            return Err(StructureError::WrongType("name".to_string()))
-        }
+        let name = match info_dict.get(&"name".into()) {
+            Some(BencodeElement::ByteString(name)) => name.to_string(),
+            Some(_) => return Err(StructureError::WrongType("name".to_string())),
+            None => return Err(StructureError::RequiredKeyMissing("name".to_string())),
+        };
 
-        // yucky disgusting im sorry
-        if info_dict.contains_key(&"files".into()) {
-            if let BencodeElement::List(files_list) = &info_dict[&"files".into()] {
-                let mut entries: Vec<FileEntry> = Vec::new();
-                for entry_elem in files_list {
-                    if let BencodeElement::Dict(entry_dict) = entry_elem {
-                        if !entry_dict.contains_key(&"length".into()) {
-                            return Err(StructureError::RequiredKeyMissing("(file entry)".to_string(), "length".to_string()));
+        let file = if info_dict.contains_key(&"files".into()) {
+            let files = match &info_dict[&"files".into()] {
+                BencodeElement::List(files_list) => {
+                    let mut file_entries: Vec<FileEntry> = Vec::new();
+                    for entry_elem in files_list {
+                        match entry_elem {
+                            BencodeElement::Dict(entry_dict) => {
+                                let length = match entry_dict.get(&"length".into()) {
+                                    Some(BencodeElement::Int(len)) => *len as u64,
+                                    Some(_) => return Err(StructureError::WrongType("length".to_string())),
+                                    None => return Err(StructureError::RequiredKeyMissing("length".to_string())),
+                                };
+
+                                let path = match entry_dict.get(&"path".into()) {
+                                    Some(BencodeElement::List(path_list)) => {
+                                        let mut path_parts = PathBuf::new();
+                                        for path_part in path_list {
+                                            match path_part {
+                                                BencodeElement::ByteString(part) => path_parts.push(part.to_string()),
+                                                _ => return Err(StructureError::WrongType("(path part)".to_string())),
+                                            }
+                                        }
+                                        path_parts
+                                    },
+                                    Some(_) => return Err(StructureError::WrongType("path".to_string())),
+                                    None => return Err(StructureError::RequiredKeyMissing("path".to_string())),
+                                };
+
+                                file_entries.push(FileEntry { length, path });
+                            },
+                            _ => return Err(StructureError::WrongType("(file entry)".to_string()))
                         }
-                        if !entry_dict.contains_key(&"path".into()) {
-                            return Err(StructureError::RequiredKeyMissing("(file entry)".to_string(), "path".to_string()));
-                        }
-
-                        let mut entry: FileEntry = FileEntry::new();
-
-                        if let BencodeElement::Int(len) = entry_dict[&"length".into()] {
-                            entry.length = len as u64;
-                        } else {
-                            return Err(StructureError::WrongType("length".to_string()));
-                        }
-
-                        if let BencodeElement::List(path_list) = &entry_dict[&"path".into()] {
-                            for elem in path_list {
-                                if let BencodeElement::ByteString(path_part) = elem {
-                                    entry.path.push(path_part.to_string());
-                                } else {
-                                    return Err(StructureError::WrongType("(path part)".to_string()));
-                                }
-                            }
-                        } else {
-                            return Err(StructureError::WrongType("path".to_string()));
-                        }
-
-                        entries.push(entry);
-                    } else {
-                        return Err(StructureError::WrongType("(file entry)".to_string()));
                     }
+                    file_entries
+                },
+                _ => return Err(StructureError::WrongType("files".to_string()))
+            };
+
+            FileMode::MultipleFiles { files }
+        } else {
+            let length = match info_dict[&"length".into()] {
+                BencodeElement::Int(len) => {
+                    if len < 0 { return Err(StructureError::NegativeLength) }
+                    len as u64
+                },
+                _ => return Err(StructureError::WrongType("length".to_string()))
+            };
+
+            FileMode::SingleFile { length }
+        };
+
+        let piece_length = match info_dict.get(&"piece length".into()) {
+            Some(BencodeElement::Int(piece_len)) => {
+                if *piece_len < 0 { return Err(StructureError::NegativeLength) }
+                *piece_len as u32
+            }
+            Some(_) => return Err(StructureError::WrongType("piece length".to_string())),
+            None => return Err(StructureError::RequiredKeyMissing("piece length".to_string())),
+        };
+
+        let pieces_hashes = match info_dict.get(&"pieces".into()) {
+            Some(BencodeElement::ByteString(bytes)) => {
+                if bytes.len() % 20 != 0 {
+                    return Err(StructureError::PiecesBytesLengthError);
                 }
-                info.file = FileMode::MultipleFiles { files: entries }
-            } else {
-                return Err(StructureError::WrongType("files".to_string()))
-            }
-        } else {
-            if let BencodeElement::Int(length) = info_dict[&"length".into()] {
-                if length < 0 {
-                    return Err(StructureError::NegativeLength);
-                }
-                info.file = FileMode::SingleFile { length: length as u64 };
-            } else {
-                return Err(StructureError::WrongType("length".to_string()));
-            }
-        }
+                // unwrap will not fail, the chunk size is guaranteed.
+                bytes.inner()
+                    .chunks_exact(20)
+                    .map(|ch| ch.try_into().unwrap())
+                    .collect::<Vec<[u8; 20]>>()
+            },
+            Some(_) => return Err(StructureError::WrongType("pieces".to_string())),
+            None => return Err(StructureError::RequiredKeyMissing("pieces".to_string())),
+        };
 
-        if let BencodeElement::Int(piece_length) = info_dict[&"piece length".into()] {
-            if piece_length < 0 {
-                return Err(StructureError::NegativeLength);
-            }
-            info.piece_length = piece_length as u32;
-        } else {
-            return Err(StructureError::WrongType("piece length".to_string()));
-        }
-
-        if let BencodeElement::ByteString(bytes) = &info_dict[&"pieces".into()] {
-            if bytes.len() % 20 != 0 {
-                return Err(StructureError::PiecesBytesLengthError);
-            }
-            // unwrap will not fail, the chunk size is guaranteed.
-            info.pieces_hashes = bytes.inner()
-                .chunks_exact(20)
-                .map(|ch| ch.try_into().unwrap())
-                .collect();
-        } else {
-            return Err(StructureError::WrongType("pieces".to_string()))
-        }
-
-        return Ok(info);
+        return Ok(Self {
+            name,
+            file,
+            piece_length,
+            pieces_hashes
+        });
     }
 }
 
@@ -197,11 +187,5 @@ pub enum FileMode {
 #[derive(Debug)]
 pub struct FileEntry {
     pub length: u64,
-    pub path: Vec<String>,
-}
-
-impl FileEntry {
-    pub fn new() -> FileEntry {
-        FileEntry { length: 0, path: Vec::new() }
-    }
+    pub path: PathBuf
 }
