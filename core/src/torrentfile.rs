@@ -181,7 +181,7 @@ impl Info {
                 return Err(StructureError::PiecesBytesLengthError);
             }
             // unwrap will not fail, the chunk size is guaranteed.
-            Ok(bytes.inner()
+            Ok(bytes.bytes()
                 .chunks_exact(20)
                 .map(|ch| ch.try_into().unwrap())
                 .collect::<Vec<[u8; 20]>>())
