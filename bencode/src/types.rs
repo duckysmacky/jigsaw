@@ -239,7 +239,7 @@ impl fmt::Display for BencodeDict {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum BencodeElement {
     Number(BencodeNumber),
-    ByteString(ByteString),
+    String(ByteString),
     List(BencodeList),
     Dict(BencodeDict),
 }
@@ -248,7 +248,7 @@ impl BencodeElement {
     fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, level: usize) -> fmt::Result {
         match self {
             BencodeElement::Number(val) => write!(f, "{}", val.display()),
-            BencodeElement::ByteString(val) => write!(f, "{}", val.display()),
+            BencodeElement::String(val) => write!(f, "{}", val.display()),
             BencodeElement::List(val) => val.fmt_indent(f, level),
             BencodeElement::Dict(val) => val.fmt_indent(f, level),
         }

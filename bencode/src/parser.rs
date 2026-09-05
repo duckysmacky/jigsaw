@@ -67,7 +67,7 @@ impl BencodeParser {
             b'd' => { Ok(BencodeElement::Dict(self.parse_dict()?)) },
             b'l' => { Ok(BencodeElement::List(self.parse_list()?)) },
             b'i' => { Ok(BencodeElement::Number(self.parse_number()?)) },
-            b'0'..=b'9' => { Ok(BencodeElement::ByteString(self.parse_string()?)) }
+            b'0'..=b'9' => { Ok(BencodeElement::String(self.parse_string()?)) }
             // TODO: error out
             _ => { Err(Error::UnexpectedCharacter) }
         }
@@ -161,7 +161,7 @@ mod tests {
         let mut decoder = BencodeParser::new(Rc::from(bencoded));
 
         let mut dict = BencodeDict::new();
-        dict.insert("bar".into(), BencodeElement::ByteString("spam".into()));
+        dict.insert("bar".into(), BencodeElement::String("spam".into()));
         dict.insert("foo".into(), BencodeElement::Number((-42i64).into()));
         dict.insert("list".into(), BencodeElement::List(BencodeList::from(vec![
             BencodeElement::Number((43i64).into()),

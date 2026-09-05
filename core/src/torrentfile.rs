@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use jigsaw_bencode::{BencodeElement, ByteString as ByteStringType};
+use jigsaw_bencode::{BencodeElement, ByteString};
 use thiserror::Error;
 
 use crate::bencode::BencodeDict;
@@ -94,10 +94,10 @@ macro_rules! bencode_get {
 
 impl TorrentFile {
     pub fn from_bencoded(dict: BencodeDict) -> Result<Self, StructureError> {
-        let announce = bencode_get!(dict: required "announce", ByteString => |x: &ByteStringType| x.to_string())?;
+        let announce = bencode_get!(dict: required "announce", String => |x: &ByteString| x.to_string())?;
         let info = bencode_get!(dict: required "info", Dict => errors |x: &BencodeDict| Info::from_bencoded(x))?;
-        let comment = bencode_get!(dict: optional "comment", ByteString => |x: &ByteStringType| x.to_string())?;
-        let created_by = bencode_get!(dict: optional "created by", ByteString => |x: &ByteStringType| x.to_string())?;
+        let comment = bencode_get!(dict: optional "comment", String => |x: &ByteString| x.to_string())?;
+        let created_by = bencode_get!(dict: optional "created by", String => |x: &ByteString| x.to_string())?;
         let creation_date = bencode_get!(dict: optional "creation date", Number => |x: &i64| *x as u64)?;
 
         Ok(Self {
@@ -125,7 +125,7 @@ impl Info {
             return Err(StructureError::RequiredKeyMissing("files/length".to_string()));
         }
 
-        let name = bencode_get!(info_dict: required "name", ByteString => |x: &ByteStringType| x.to_string())?;
+        let name = bencode_get!(info_dict: required "name", String => |x: &ByteString| x.to_string())?;
 
         let file = if info_dict.contains_key(&"files".into()) {
             let files = match &info_dict[&"files".into()] {
@@ -141,7 +141,7 @@ impl Info {
                                         let mut path_parts = PathBuf::new();
                                         for path_part in path_list {
                                             match path_part {
-                                                BencodeElement::ByteString(part) => path_parts.push(part.to_string()),
+                                                BencodeElement::String(part) => path_parts.push(part.to_string()),
                                                 _ => return Err(StructureError::WrongType("(path part)".to_string())),
                                             }
                                         }
@@ -176,7 +176,7 @@ impl Info {
             Ok(*len as u32)
         })?;
 
-        let pieces_hashes = bencode_get!(info_dict: required "pieces", ByteString => errors |bytes: &ByteStringType| {
+        let pieces_hashes = bencode_get!(info_dict: required "pieces", String => errors |bytes: &ByteString| {
             if bytes.len() % 20 != 0 {
                 return Err(StructureError::PiecesBytesLengthError);
             }
