@@ -2,7 +2,7 @@
 use std::{
     ops::{Deref, DerefMut},
     collections::BTreeMap,
-    fmt, 
+    fmt,
 };
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
@@ -12,12 +12,16 @@ impl ByteString {
     pub fn len(&self) -> usize {
         self.0.len()
     }
+
+    pub fn inner(&self) -> &Vec<u8> {
+        &self.0
+    }
 }
 
 impl From<&str> for ByteString {
-	fn from(value: &str) -> Self {
-		ByteString(value.as_bytes().to_vec())
-	}
+    fn from(value: &str) -> Self {
+        ByteString(value.as_bytes().to_vec())
+    }
 }
 
 impl From<Vec<u8>> for ByteString {
@@ -40,7 +44,10 @@ impl fmt::Display for ByteString {
         let str = String::from_utf8(self.0.clone())
             .unwrap_or_else(|_| hex::encode(&self.0));
 
-        write!(f, "{}:{}", self.0.len(), str)
+        // changed this from write!("{}:{}", self.0.len(), str)
+        // because this automatically implements ToString and so
+        // 4:test would become "4:test" instead of "test" which is problematic
+        write!(f, "{}", str)
     }
 }
 
@@ -73,6 +80,26 @@ impl DerefMut for BencodeList {
     }
 }
 
+impl IntoIterator for BencodeList {
+    type Item = BencodeElement;
+
+    type IntoIter = std::vec::IntoIter<BencodeElement>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a BencodeList {
+    type Item = &'a BencodeElement;
+
+    type IntoIter = std::slice::Iter<'a, BencodeElement>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 impl fmt::Debug for BencodeList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&self.0, f)
@@ -90,6 +117,10 @@ impl BencodeList {
         }
 
         write!(f, "{}e", "\t".repeat(level))
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 }
 
@@ -151,10 +182,10 @@ impl fmt::Display for BencodeDict {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum BencodeElement {
-	Int(i64),
-	ByteString(ByteString),
-	List(BencodeList),
-	Dict(BencodeDict),
+    Int(i64),
+    ByteString(ByteString),
+    List(BencodeList),
+    Dict(BencodeDict),
 }
 
 impl BencodeElement {
@@ -169,7 +200,7 @@ impl BencodeElement {
 }
 
 impl fmt::Display for BencodeElement {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_indent(f, 0)
     }
 }
