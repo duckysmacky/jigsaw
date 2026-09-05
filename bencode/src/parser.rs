@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use thiserror::Error;
 
 use crate::{BencodeElement, BencodeDict, BencodeList, ByteString};
@@ -18,14 +20,17 @@ pub enum Error {
     NegativeStringLength,
 }
 
-pub struct BencodeParser<'a> {
+pub struct BencodeParser {
+    bytes: Rc<[u8]>,
     idx: usize,
-    bytes: &'a [u8]
 }
 
-impl<'a> BencodeParser<'a> {
-    pub fn new(bytes: &'a [u8]) -> BencodeParser<'a> {
-        BencodeParser { idx: 0, bytes }
+impl BencodeParser {
+    pub fn new(bytes: Rc<[u8]>) -> Self {
+        Self {
+            bytes,
+            idx: 0,
+        }
     }
 
     pub fn parse(&mut self) -> Result<BencodeElement, Error> {
@@ -151,8 +156,9 @@ mod tests {
 
     #[test]
     fn correct_decoding() {
-        let bencoded = b"d3:bar4:spam3:fooi-42e4:listli43ei44ei-73eee";
-        let mut decoder = BencodeParser::new(bencoded);
+        // note: conversion to vector is needed here so we can clearly convert it into Rc
+        let bencoded = b"d3:bar4:spam3:fooi-42e4:listli43ei44ei-73eee".to_vec();
+        let mut decoder = BencodeParser::new(Rc::from(bencoded));
 
         let mut dict = BencodeDict::new();
         dict.insert("bar".into(), BencodeElement::ByteString("spam".into()));

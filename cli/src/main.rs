@@ -3,6 +3,7 @@ mod cli;
 use std::{
     fs::File,
     io::Read,
+    rc::Rc,
     path::Path,
 };
 
@@ -35,7 +36,7 @@ fn dump_torrent_file(path: &Path, debug: bool) -> anyhow::Result<()> {
 
     file.read_to_end(&mut buf)?;
 
-    let mut parser = BencodeParser::new(&buf);
+    let mut parser = BencodeParser::new(Rc::from(buf));
     let parsed_file = parser.parse()?;
 
     println!("Dumping contents of '{}':", path.display());
