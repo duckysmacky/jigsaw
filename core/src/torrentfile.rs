@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
-use jigsaw_bencode::{BencodeElement, ByteString};
+use sha1::{Digest, Sha1};
 use thiserror::Error;
+
+use jigsaw_bencode::{BencodeElement, ByteString};
 
 use crate::bencode::BencodeDict;
 
@@ -23,6 +25,8 @@ pub enum StructureError {
 pub struct TorrentFile {
     pub announce: String,
     pub info: Info,
+    /// SHA1 of the bencoded `Info` dict
+    pub info_hash: [u8; 20],
 
     // TODO: add announce-list at some point
 
@@ -95,7 +99,11 @@ macro_rules! bencode_get {
 impl TorrentFile {
     pub fn from_bencoded(dict: BencodeDict) -> Result<Self, StructureError> {
         let announce = bencode_get!(dict: required "announce", String => |x: &ByteString| x.to_string())?;
-        let info = bencode_get!(dict: required "info", Dict => errors |x: &BencodeDict| Info::from_bencoded(x))?;
+        let (info, info_hash) = bencode_get!(dict: required "info", Dict => errors |info_dict: &BencodeDict| {
+            let info = Info::from_bencoded(info_dict)?;
+            let info_hash = hash_info_dict(info_dict);
+            Ok((info, info_hash))
+        })?;
         let comment = bencode_get!(dict: optional "comment", String => |x: &ByteString| x.to_string())?;
         let created_by = bencode_get!(dict: optional "created by", String => |x: &ByteString| x.to_string())?;
         let creation_date = bencode_get!(dict: optional "creation date", Number => |x: &i64| *x as u64)?;
@@ -103,11 +111,22 @@ impl TorrentFile {
         Ok(Self {
             announce,
             info,
+            info_hash,
             comment,
             created_by,
             creation_date
         })
     }
+}
+
+fn hash_info_dict(info_dict: &BencodeDict) -> [u8; 20] {
+    let bytes = info_dict.original_bytes();
+
+    let mut hasher = Sha1::new();
+    hasher.update(bytes);
+    let result = hasher.finalize();
+
+    result.into()
 }
 
 #[derive(Debug)]
