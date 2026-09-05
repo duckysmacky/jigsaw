@@ -226,3 +226,159 @@ pub struct FileEntry {
     pub length: u64,
     pub path: PathBuf
 }
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use jigsaw_bencode::BencodeParser;
+
+    use super::*;
+
+    fn bstring(s: &str) -> String {
+        format!("{}:{}", s.len(), s)
+    }
+
+    fn bint(n: i64) -> String {
+        format!("i{}e", n)
+    }
+
+    fn key_value(key: &str, value: &str) -> String {
+        format!("{}{}", bstring(key), value)
+    }
+
+    fn single_file_info() -> String {
+        let piece_hash = "01234567890123456789"; // 20 bytes, one fake piece
+        format!(
+            "d{}{}{}{}e",
+            key_value("length", &bint(12345)),
+            key_value("name", &bstring("test.txt")),
+            key_value("piece length", &bint(16384)),
+            key_value("pieces", &bstring(piece_hash)),
+        )
+    }
+
+    fn multi_file_info() -> String {
+        let piece_hash = "01234567890123456789".repeat(2); // 40 bytes, two fake pieces
+        let file_a = format!(
+            "d{}{}e",
+            key_value("length", &bint(100)),
+            key_value("path", &format!("l{}e", bstring("dir/file_a.txt"))),
+        );
+        let file_b = format!(
+            "d{}{}e",
+            key_value("length", &bint(200)),
+            key_value("path", &format!("l{}{}e", bstring("dir"), bstring("file_b.txt"))),
+        );
+        format!(
+            "d{}{}{}{}e",
+            key_value("files", &format!("l{}{}e", file_a, file_b)),
+            key_value("name", &bstring("test_dir")),
+            key_value("piece length", &bint(16384)),
+            key_value("pieces", &bstring(&piece_hash)),
+        )
+    }
+
+    fn parse_dict(bencoded: &str) -> BencodeDict {
+        let bytes: Rc<[u8]> = Rc::from(bencoded.as_bytes().to_vec());
+        let mut parser = BencodeParser::new(bytes);
+
+        match parser.parse().expect("input should be valid bencode") {
+            BencodeElement::Dict(dict) => dict,
+            _ => panic!("top-level bencode element should be a dict"),
+        }
+    }
+
+    fn expected_hash(info: &str) -> [u8; 20] {
+        use sha1::{Digest, Sha1};
+
+        let mut hasher = Sha1::new();
+        hasher.update(info.as_bytes());
+        hasher.finalize().into()
+    }
+
+    #[test]
+    fn parses_single_file_torrent() {
+        let info = single_file_info();
+        let torrent = format!(
+            "d{}{}{}{}{}e",
+            key_value("announce", &bstring("http://tracker.example.com/announce")),
+            key_value("comment", &bstring("test comment")),
+            key_value("created by", &bstring("jigsaw-test")),
+            key_value("creation date", &bint(1700000000)),
+            key_value("info", &info),
+        );
+
+        let dict = parse_dict(&torrent);
+        let torrent_file = TorrentFile::from_bencoded(dict).expect("structure should be valid");
+
+        assert_eq!(torrent_file.announce, "http://tracker.example.com/announce");
+        assert_eq!(torrent_file.comment.as_deref(), Some("test comment"));
+        assert_eq!(torrent_file.created_by.as_deref(), Some("jigsaw-test"));
+        assert_eq!(torrent_file.creation_date, Some(1700000000));
+
+        assert_eq!(torrent_file.info.name, "test.txt");
+        assert_eq!(torrent_file.info.piece_length, 16384);
+        assert_eq!(torrent_file.info.pieces_hashes.len(), 1);
+        assert!(matches!(torrent_file.info.file, FileMode::SingleFile { length: 12345 }));
+
+        assert_eq!(torrent_file.info_hash, expected_hash(&info));
+    }
+
+    #[test]
+    fn parses_multi_file_torrent() {
+        let info = multi_file_info();
+        let torrent = format!("d{}{}e", key_value("announce", &bstring("http://tracker.example.com/announce")), key_value("info", &info));
+
+        let dict = parse_dict(&torrent);
+        let torrent_file = TorrentFile::from_bencoded(dict).expect("structure should be valid");
+
+        assert_eq!(torrent_file.comment, None);
+        assert_eq!(torrent_file.created_by, None);
+        assert_eq!(torrent_file.creation_date, None);
+
+        assert_eq!(torrent_file.info.name, "test_dir");
+        assert_eq!(torrent_file.info.pieces_hashes.len(), 2);
+
+        match torrent_file.info.file {
+            FileMode::MultipleFiles { files } => {
+                assert_eq!(files.len(), 2);
+                assert_eq!(files[0].length, 100);
+                assert_eq!(files[0].path, PathBuf::from("dir/file_a.txt"));
+                assert_eq!(files[1].length, 200);
+                assert_eq!(files[1].path, PathBuf::from("dir/file_b.txt"));
+            }
+            _ => panic!("expected multiple files"),
+        }
+
+        assert_eq!(torrent_file.info_hash, expected_hash(&info));
+    }
+
+    #[test]
+    fn fails_when_announce_is_missing() {
+        let info = single_file_info();
+        let torrent = format!("d{}e", key_value("info", &info));
+
+        let dict = parse_dict(&torrent);
+        let err = TorrentFile::from_bencoded(dict).unwrap_err();
+
+        assert!(matches!(err, StructureError::RequiredKeyMissing(key) if key == "announce"));
+    }
+
+    #[test]
+    fn fails_when_pieces_length_is_not_divisible_by_20() {
+        let info = format!(
+            "d{}{}{}{}e",
+            key_value("length", &bint(1)),
+            key_value("name", &bstring("test.txt")),
+            key_value("piece length", &bint(16384)),
+            key_value("pieces", &bstring("short")),
+        );
+        let torrent = format!("d{}{}e", key_value("announce", &bstring("http://tracker.example.com/announce")), key_value("info", &info));
+
+        let dict = parse_dict(&torrent);
+        let err = TorrentFile::from_bencoded(dict).unwrap_err();
+
+        assert!(matches!(err, StructureError::PiecesBytesLengthError));
+    }
+}
