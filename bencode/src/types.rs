@@ -2,6 +2,7 @@
 use std::{
     ops::{Deref, DerefMut},
     collections::BTreeMap,
+    rc::Rc,
     fmt,
 };
 
@@ -180,18 +181,48 @@ impl fmt::Display for BencodeList {
     }
 }
 
-type BencodeElementMap = BTreeMap<ByteString, BencodeElement>;
+pub type BencodeElementMap = BTreeMap<ByteString, BencodeElement>;
+
+/// Struct used to hold a reference to a byte array and the inclusive
+/// indexes `start` and `end` of where the original bytes are located
+/// in the array
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
+pub struct OriginalBytes {
+    bytes: Rc<[u8]>,
+    start: usize,
+    end: usize,
+}
+
+impl OriginalBytes {
+    pub fn new(bytes: Rc<[u8]>, start: usize, end: usize) -> Self {
+        Self {
+            bytes,
+            start,
+            end,
+        }
+    }
+
+    pub fn get(&self) -> &[u8] {
+        &self.bytes[self.start..self.end + 1]
+    }
+}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
 pub struct BencodeDict {
     inner: BencodeElementMap,
+    original_bytes: OriginalBytes,
 }
 
 impl BencodeDict {
-    pub fn new() -> Self {
+    pub fn new(inner: BencodeElementMap, original_bytes: OriginalBytes) -> Self {
         Self {
-            inner: BencodeElementMap::new(),
+            inner,
+            original_bytes,
         }
+    }
+
+    pub fn original_bytes(&self) -> &[u8] {
+        self.original_bytes.get()
     }
 }
 

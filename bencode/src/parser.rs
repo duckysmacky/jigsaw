@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use thiserror::Error;
 
-use crate::{BencodeElement, BencodeDict, BencodeList, ByteString, BencodeNumber};
+use crate::{BencodeElement, BencodeDict, BencodeList, ByteString, BencodeNumber, BencodeElementMap, OriginalBytes};
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -74,21 +74,25 @@ impl BencodeParser {
     }
 
     fn parse_dict(&mut self) -> Result<BencodeDict, Error> {
-        let mut dict = BencodeDict::new();
+        let mut map = BencodeElementMap::new();
 
+        let start = self.idx;
         self.advance()?; // from 'd'
         while self.peek()? != b'e' {
             let key = self.parse_string()?;
 
-            if dict.contains_key(&key) {
+            if map.contains_key(&key) {
                 return Err(Error::DuplicateKey(key.to_string()));
             }
 
-            dict.insert(key, self.parse_elem()?);
+            map.insert(key, self.parse_elem()?);
         }
+        let end = self.idx;
         self.advance()?; // from 'e'
 
-        Ok(dict)
+        let original_bytes = OriginalBytes::new(Rc::clone(&self.bytes), start, end);
+
+        Ok(BencodeDict::new(map, original_bytes))
     }
 
     fn parse_list(&mut self) -> Result<BencodeList, Error> {
@@ -156,19 +160,21 @@ mod tests {
 
     #[test]
     fn correct_decoding() {
-        // note: conversion to vector is needed here so we can clearly convert it into Rc
-        let bencoded = b"d3:bar4:spam3:fooi-42e4:listli43ei44ei-73eee".to_vec();
-        let mut decoder = BencodeParser::new(Rc::from(bencoded));
+        let bencoded = b"d3:bar4:spam3:fooi-42e4:listli43ei44ei-73eee";
+        let bytes = Rc::from(bencoded.to_vec());
+        let mut decoder = BencodeParser::new(Rc::clone(&bytes));
 
-        let mut dict = BencodeDict::new();
-        dict.insert("bar".into(), BencodeElement::String("spam".into()));
-        dict.insert("foo".into(), BencodeElement::Number((-42i64).into()));
-        dict.insert("list".into(), BencodeElement::List(BencodeList::from(vec![
+        let mut map = BencodeElementMap::new();
+        map.insert("bar".into(), BencodeElement::String("spam".into()));
+        map.insert("foo".into(), BencodeElement::Number((-42i64).into()));
+        map.insert("list".into(), BencodeElement::List(BencodeList::from(vec![
             BencodeElement::Number((43i64).into()),
             BencodeElement::Number((44i64).into()),
             BencodeElement::Number((-73i64).into())
         ])));
-        let expected = BencodeElement::Dict(dict);
+
+        let original = OriginalBytes::new(Rc::clone(&bytes), 0, bytes.len() - 1);
+        let expected = BencodeElement::Dict(BencodeDict::new(map, original));
 
         assert_eq!(expected, decoder.parse().unwrap());
     }
