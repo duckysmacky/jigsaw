@@ -98,7 +98,7 @@ impl TorrentFile {
         let info = bencode_get!(dict: required "info", Dict => errors |x: &BencodeDict| Info::from_bencoded(x))?;
         let comment = bencode_get!(dict: optional "comment", ByteString => |x: &ByteStringType| x.to_string())?;
         let created_by = bencode_get!(dict: optional "created by", ByteString => |x: &ByteStringType| x.to_string())?;
-        let creation_date = bencode_get!(dict: optional "creation date", Int => |x: &i64| *x as u64)?;
+        let creation_date = bencode_get!(dict: optional "creation date", Number => |x: &i64| *x as u64)?;
 
         Ok(Self {
             announce,
@@ -134,7 +134,7 @@ impl Info {
                     for entry_elem in files_list {
                         match entry_elem {
                             BencodeElement::Dict(entry_dict) => {
-                                let length = bencode_get!(entry_dict: required "length", Int => |len: &i64| *len as u64)?;
+                                let length = bencode_get!(entry_dict: required "length", Number => |len: &i64| *len as u64)?;
 
                                 let path = match entry_dict.get(&"path".into()) {
                                     Some(BencodeElement::List(path_list)) => {
@@ -163,7 +163,7 @@ impl Info {
 
             FileMode::MultipleFiles { files }
         } else {
-            let length = bencode_get!(info_dict: required "length", Int => errors |len: &i64| {
+            let length = bencode_get!(info_dict: required "length", Number => errors |len: &i64| {
                 if *len < 0 { return Err(StructureError::NegativeLength) }
                 Ok(*len as u64)
             })?;
@@ -171,7 +171,7 @@ impl Info {
             FileMode::SingleFile { length }
         };
 
-        let piece_length = bencode_get!(info_dict: required "piece length", Int => errors |len: &i64| {
+        let piece_length = bencode_get!(info_dict: required "piece length", Number => errors |len: &i64| {
             if *len < 0 { return Err(StructureError::NegativeLength) }
             Ok(*len as u32)
         })?;

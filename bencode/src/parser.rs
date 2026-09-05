@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use thiserror::Error;
 
-use crate::{BencodeElement, BencodeDict, BencodeList, ByteString};
+use crate::{BencodeElement, BencodeDict, BencodeList, ByteString, BencodeNumber};
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -66,7 +66,7 @@ impl BencodeParser {
         match self.peek()? {
             b'd' => { Ok(BencodeElement::Dict(self.parse_dict()?)) },
             b'l' => { Ok(BencodeElement::List(self.parse_list()?)) },
-            b'i' => { Ok(BencodeElement::Int(self.parse_int()?)) },
+            b'i' => { Ok(BencodeElement::Number(self.parse_number()?)) },
             b'0'..=b'9' => { Ok(BencodeElement::ByteString(self.parse_string()?)) }
             // TODO: error out
             _ => { Err(Error::UnexpectedCharacter) }
@@ -130,7 +130,7 @@ impl BencodeParser {
         Err(Error::InvalidInteger(digits))
     }
 
-    fn parse_int(&mut self) -> Result<i64, Error> {
+    fn parse_number(&mut self) -> Result<BencodeNumber, Error> {
         self.advance()?; // from 'i'
         let mut digits = "".to_string();
 
@@ -141,7 +141,7 @@ impl BencodeParser {
         self.advance()?; // from 'e'
 
         if let Ok(val) = i64::from_str_radix(&digits, 10) {
-            return Ok(val);
+            return Ok(BencodeNumber::from(val));
         }
 
         Err(Error::InvalidInteger(digits))
@@ -162,8 +162,12 @@ mod tests {
 
         let mut dict = BencodeDict::new();
         dict.insert("bar".into(), BencodeElement::ByteString("spam".into()));
-        dict.insert("foo".into(), BencodeElement::Int(-42));
-        dict.insert("list".into(), BencodeElement::List(BencodeList::from(vec![BencodeElement::Int(43), BencodeElement::Int(44), BencodeElement::Int(-73)])));
+        dict.insert("foo".into(), BencodeElement::Number((-42i64).into()));
+        dict.insert("list".into(), BencodeElement::List(BencodeList::from(vec![
+            BencodeElement::Number((43i64).into()),
+            BencodeElement::Number((44i64).into()),
+            BencodeElement::Number((-73i64).into())
+        ])));
         let expected = BencodeElement::Dict(dict);
 
         assert_eq!(expected, decoder.parse().unwrap());

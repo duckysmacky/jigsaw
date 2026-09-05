@@ -66,6 +66,37 @@ impl fmt::Display for ByteString {
     }
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct BencodeNumber {
+    inner: i64,
+}
+
+impl BencodeNumber {
+    pub fn display(&self) -> String {
+        format!("i{}e", self)
+    }
+}
+
+impl From<i64> for BencodeNumber {
+    fn from(value: i64) -> Self {
+        Self { inner: value }
+    }
+}
+
+impl Deref for BencodeNumber {
+    type Target = i64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl fmt::Display for BencodeNumber {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.inner)
+    }
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
 pub struct BencodeList {
     inner: Vec<BencodeElement>,
@@ -207,7 +238,7 @@ impl fmt::Display for BencodeDict {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum BencodeElement {
-    Int(i64),
+    Number(BencodeNumber),
     ByteString(ByteString),
     List(BencodeList),
     Dict(BencodeDict),
@@ -216,7 +247,7 @@ pub enum BencodeElement {
 impl BencodeElement {
     fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, level: usize) -> fmt::Result {
         match self {
-            BencodeElement::Int(val) => write!(f, "i{}e", val),
+            BencodeElement::Number(val) => write!(f, "{}", val.display()),
             BencodeElement::ByteString(val) => write!(f, "{}", val.display()),
             BencodeElement::List(val) => val.fmt_indent(f, level),
             BencodeElement::Dict(val) => val.fmt_indent(f, level),
