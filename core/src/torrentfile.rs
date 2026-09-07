@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use sha1::{Digest, Sha1};
 use thiserror::Error;
 
-use jigsaw_bencode::{BencodeElement, ByteString};
+use jigsaw_bencode::{BencodeElement, BencodeList, ByteString};
 
 use crate::bencode::BencodeDict;
 
@@ -147,38 +147,24 @@ impl Info {
         let name = bencode_get!(info_dict: required "name", String => |x: &ByteString| x.to_string())?;
 
         let file = if info_dict.contains_key(&"files".into()) {
-            let files = match &info_dict[&"files".into()] {
-                BencodeElement::List(files_list) => {
-                    let mut file_entries: Vec<FileEntry> = Vec::new();
-                    for entry_elem in files_list {
-                        match entry_elem {
-                            BencodeElement::Dict(entry_dict) => {
-                                let length = bencode_get!(entry_dict: required "length", Number => |len: &i64| *len as u64)?;
+            let files: Vec<FileEntry> = bencode_get!(info_dict: required "files", List => errors |files_list: &BencodeList| files_list.iter()
+                .map(|file_entry| match file_entry {
+                    BencodeElement::Dict(entry_dict) => {
+                        let length = bencode_get!(entry_dict: required "length", Number => |len: &i64| *len as u64)?;
 
-                                let path = match entry_dict.get(&"path".into()) {
-                                    Some(BencodeElement::List(path_list)) => {
-                                        let mut path_parts = PathBuf::new();
-                                        for path_part in path_list {
-                                            match path_part {
-                                                BencodeElement::String(part) => path_parts.push(part.to_string()),
-                                                _ => return Err(StructureError::WrongType("(path part)".to_string())),
-                                            }
-                                        }
-                                        path_parts
-                                    },
-                                    Some(_) => return Err(StructureError::WrongType("path".to_string())),
-                                    None => return Err(StructureError::RequiredKeyMissing("path".to_string())),
-                                };
+                        let path = bencode_get!(entry_dict: required "path", List => errors |path_list: &BencodeList| path_list.iter()
+                            .try_fold(PathBuf::new(), |parts, part| match part {
+                                BencodeElement::String(part) => Ok(parts.join(part.to_string())),
+                                _ => Err(StructureError::WrongType("(path part)".to_string())),
+                            })
+                        )?;
 
-                                file_entries.push(FileEntry { length, path });
-                            },
-                            _ => return Err(StructureError::WrongType("(file entry)".to_string()))
-                        }
+                        Ok(FileEntry { length, path })
                     }
-                    file_entries
-                },
-                _ => return Err(StructureError::WrongType("files".to_string()))
-            };
+                    _ => Err(StructureError::WrongType("(file entry)".to_string()))
+                })
+                .collect()
+            )?;
 
             FileMode::MultipleFiles { files }
         } else {
