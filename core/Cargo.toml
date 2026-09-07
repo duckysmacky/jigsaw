@@ -15,3 +15,4 @@ tracing = { workspace = true }
 ureq = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
+sha1 = { workspace = true }
