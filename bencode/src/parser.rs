@@ -66,7 +66,7 @@ impl BencodeParser {
         match self.peek()? {
             b'd' => { Ok(BencodeElement::Dict(self.parse_dict()?)) },
             b'l' => { Ok(BencodeElement::List(self.parse_list()?)) },
-            b'i' => { Ok(BencodeElement::Number(self.parse_number()?)) },
+            b'i' => { Ok(BencodeElement::Int(self.parse_number()?)) },
             b'0'..=b'9' => { Ok(BencodeElement::String(self.parse_string()?)) }
             // TODO: error out
             _ => { Err(Error::UnexpectedCharacter) }
@@ -166,11 +166,11 @@ mod tests {
 
         let mut map = BencodeElementMap::new();
         map.insert("bar".into(), BencodeElement::String("spam".into()));
-        map.insert("foo".into(), BencodeElement::Number((-42i64).into()));
+        map.insert("foo".into(), BencodeElement::Int((-42i64).into()));
         map.insert("list".into(), BencodeElement::List(BencodeList::from(vec![
-            BencodeElement::Number((43i64).into()),
-            BencodeElement::Number((44i64).into()),
-            BencodeElement::Number((-73i64).into())
+            BencodeElement::Int((43i64).into()),
+            BencodeElement::Int((44i64).into()),
+            BencodeElement::Int((-73i64).into())
         ])));
 
         let original = OriginalBytes::new(Rc::clone(&bytes), 0, bytes.len() - 1);

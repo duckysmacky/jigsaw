@@ -106,7 +106,7 @@ impl TorrentFile {
         })?;
         let comment = bencode_get!(dict: optional "comment", String => |x: &ByteString| x.to_string())?;
         let created_by = bencode_get!(dict: optional "created by", String => |x: &ByteString| x.to_string())?;
-        let creation_date = bencode_get!(dict: optional "creation date", Number => |x: &i64| *x as u64)?;
+        let creation_date = bencode_get!(dict: optional "creation date", Int => |x: &i64| *x as u64)?;
 
         Ok(Self {
             announce,
@@ -150,7 +150,7 @@ impl Info {
             let files: Vec<FileEntry> = bencode_get!(info_dict: required "files", List => errors |files_list: &BencodeList| files_list.iter()
                 .map(|file_entry| match file_entry {
                     BencodeElement::Dict(entry_dict) => {
-                        let length = bencode_get!(entry_dict: required "length", Number => |len: &i64| *len as u64)?;
+                        let length = bencode_get!(entry_dict: required "length", Int => |len: &i64| *len as u64)?;
 
                         let path = bencode_get!(entry_dict: required "path", List => errors |path_list: &BencodeList| path_list.iter()
                             .try_fold(PathBuf::new(), |parts, part| match part {
@@ -168,7 +168,7 @@ impl Info {
 
             FileMode::MultipleFiles { files }
         } else {
-            let length = bencode_get!(info_dict: required "length", Number => errors |len: &i64| {
+            let length = bencode_get!(info_dict: required "length", Int => errors |len: &i64| {
                 if *len < 0 { return Err(StructureError::NegativeLength) }
                 Ok(*len as u64)
             })?;
@@ -176,7 +176,7 @@ impl Info {
             FileMode::SingleFile { length }
         };
 
-        let piece_length = bencode_get!(info_dict: required "piece length", Number => errors |len: &i64| {
+        let piece_length = bencode_get!(info_dict: required "piece length", Int => errors |len: &i64| {
             if *len < 0 { return Err(StructureError::NegativeLength) }
             Ok(*len as u32)
         })?;
