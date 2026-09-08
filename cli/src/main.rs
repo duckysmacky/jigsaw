@@ -11,11 +11,12 @@ use clap::Parser;
 
 use jigsaw_core::{
     tracker::{Tracker, AnnounceEvent},
-    client::TorrentClient,
+    client::{TorrentClient, SessionCommand},
     TorrentFile,
 };
 
 use cli::{CliArgs, Commands};
+use tokio::io::AsyncBufReadExt;
 
 #[tokio::main]
 async fn main() {
@@ -92,8 +93,16 @@ async fn start(mut client: TorrentClient, torrent_file: &Path) -> anyhow::Result
     let total_size = bytes.len() as u64;
     let torrent = TorrentFile::from_bytes(bytes)?;
 
-    client.start_session(torrent, total_size).await?;
+    let cmd_tx = client.start_session(torrent, total_size).await?;
 
+    let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+    while let Some(line) = lines.next_line().await? {
+        if line.trim() == "stop" {
+            cmd_tx.send(SessionCommand::Stop).await?;
+            break;
+        }
+    }
+    
     client.await_session().await?;
 
     Ok(())

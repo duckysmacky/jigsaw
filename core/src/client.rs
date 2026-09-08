@@ -1,12 +1,12 @@
 use std::{
-    net::SocketAddrV4,
-    sync::Arc, 
-    mem,
+    net::SocketAddrV4, 
+    sync::Arc,
+    mem, 
 };
 
 use tokio::{
     time::{Duration, Instant},
-    sync::Mutex,
+    sync::{Mutex, mpsc},
 };
 use tracing::{info, error};
 
@@ -59,9 +59,15 @@ impl TorrentState {
 }
 
 #[derive(Debug)]
+pub enum SessionCommand {
+    Stop,
+}
+
+#[derive(Debug)]
 pub struct TorrentSession {
     pub file: Arc<TorrentFile>,
     pub state: Arc<Mutex<TorrentState>>,
+    pub cmd_tx: mpsc::Sender<SessionCommand>,
     pub handle: tokio::task::JoinHandle<()>,
 }
 
@@ -80,7 +86,7 @@ impl TorrentClient {
         }
     }
 
-    pub async fn start_session(&mut self, torrent: TorrentFile, total_size: u64) -> Result<(), Error> {
+    pub async fn start_session(&mut self, torrent: TorrentFile, total_size: u64) -> Result<mpsc::Sender<SessionCommand>, Error> {
         let tracker = Tracker::new(torrent.announce.clone(), &torrent.info_hash, &self.peer_id);
 
         info!("doing an initial announce");
@@ -93,6 +99,8 @@ impl TorrentClient {
 
         let state = Arc::new(Mutex::new(TorrentState::new(peers, total_size)));
         let _state = Arc::clone(&state);
+
+        let (cmd_tx, mut cmd_rx) = mpsc::channel(8);
 
         let port = self.port;
         let handle = tokio::spawn(async move {
@@ -120,7 +128,13 @@ impl TorrentClient {
                                 error!(error = err.to_string(), "unable to get tracker response");
                             }
                         }
-                    }
+                    },
+                    Some(cmd) = cmd_rx.recv() => match cmd {
+                        SessionCommand::Stop => {
+                            info!("stop signal recevied, ending the session");
+                            break;
+                        },
+                    },
                     // other events... will be aded later
                 }
             }
@@ -129,10 +143,11 @@ impl TorrentClient {
         self.session = Some(TorrentSession {
             file: Arc::new(torrent),
             state,
+            cmd_tx: cmd_tx.clone(),
             handle,
         });
 
-        Ok(())
+        Ok(cmd_tx)
     }
 
     pub async fn await_session(self) -> Result<(), Error> {
