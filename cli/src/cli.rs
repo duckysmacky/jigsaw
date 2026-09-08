@@ -34,6 +34,13 @@ pub enum Commands {
         /// Path to the .torrent file
         #[arg(value_name = "TORRENT_FILE")]
         torrent_file: PathBuf,
+    },
+
+    /// Start a new torrent session
+    Start {
+        /// Path to the .torrent file
+        #[arg(value_name = "TORRENT_FILE")]
+        torrent_file: PathBuf,
     }
 }
 

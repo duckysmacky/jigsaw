@@ -10,6 +10,7 @@ use anyhow::Context;
 use clap::Parser;
 
 use jigsaw_core::{
+    tracker::{Tracker, AnnounceEvent},
     client::TorrentClient,
     TorrentFile,
 };
@@ -20,7 +21,7 @@ use cli::{CliArgs, Commands};
 async fn main() {
     tracing_subscriber::fmt::init();
     let args = CliArgs::parse();
-    let client = TorrentClient::new();
+    let client = TorrentClient::new(8080);
 
     match args.command {
         Some(Commands::Dump{ torrent_file, output_file, debug }) => {
@@ -37,6 +38,13 @@ async fn main() {
                 eprintln!("Unable to announce for '{display}': {err}");
             }
         },
+        Some(Commands::Start { torrent_file }) => {
+            let display = torrent_file.display();
+
+            if let Err(err) = start(client, &torrent_file).await {
+                eprintln!("Unable to start torrent loop for '{display}': {err}");
+            }
+        }
         None => todo!(),
     }
 }
@@ -69,12 +77,24 @@ async fn announce(client: TorrentClient, torrent_file: &Path) -> anyhow::Result<
     let bytes = read_file(torrent_file)?;
     let total_size = bytes.len() as u64;
     let torrent = TorrentFile::from_bytes(bytes)?;
-    let port = 8080;
+    let tracker = Tracker::new(torrent.announce.clone(), &torrent.info_hash, client.peer_id());
 
-    let response = jigsaw_core::tracker::announce(&torrent.announce, &torrent.info_hash, client.peer_id(), port, total_size).await?;
+    let response = tracker.announce(client.port(), 0, 0, total_size, AnnounceEvent::Started).await?;
 
     println!("Got announce response:");
     println!("{:#?}", response);
+
+    Ok(())
+}
+
+async fn start(mut client: TorrentClient, torrent_file: &Path) -> anyhow::Result<()> {
+    let bytes = read_file(torrent_file)?;
+    let total_size = bytes.len() as u64;
+    let torrent = TorrentFile::from_bytes(bytes)?;
+
+    client.start_session(torrent, total_size).await?;
+
+    client.await_session().await?;
 
     Ok(())
 }

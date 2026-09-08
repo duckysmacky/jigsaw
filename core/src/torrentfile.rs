@@ -39,6 +39,7 @@ pub struct TorrentFile {
     pub comment: Option<String>,
     pub created_by: Option<String>,
     pub creation_date: Option<u64>,
+    // TODO: add total size tracking
 }
 
 impl TorrentFile {

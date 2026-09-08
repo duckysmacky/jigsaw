@@ -27,8 +27,8 @@ pub enum AnnounceError {
 
 #[derive(Debug)]
 pub struct AnnouceResponse {
-    interval: u64,
-    peers: Vec<SocketAddrV4>,
+    pub interval: u64,
+    pub peers: Vec<SocketAddrV4>,
 }
 
 impl AnnouceResponse {
@@ -65,26 +65,67 @@ impl AnnouceResponse {
     }
 }
 
-pub async fn announce(
-    tracker_url: &str,
-    info_hash: &[u8; 20],
-    peer_id: &[u8; 20],
-    port: u16,
-    left: u64,
-) -> Result<AnnouceResponse, AnnounceError> {
-    let url = format!(
-        "{}?info_hash={}&peer_id={}&port={}&uploaded=0&downloaded=0&left={}&compact=1&event=started",
-        tracker_url,
-        util::percent_encode(info_hash),
-        util::percent_encode(peer_id),
-        port,
-        left,
-    );
+#[derive(Default, Debug)]
+pub enum AnnounceEvent {
+    #[default]
+    Started,
+    Refresh,
+    Completed,
+    Stopped,
+}
 
-    let bytes = reqwest::get(&url)
-        .await?
-        .bytes()
-        .await?;
+impl AnnounceEvent {
+    pub fn value(&self) -> &'static str {
+        match self {
+            AnnounceEvent::Started => "started",
+            AnnounceEvent::Refresh => "",
+            AnnounceEvent::Completed => "completed",
+            AnnounceEvent::Stopped => "stopped",
+        }
+    }
+}
 
-    AnnouceResponse::from_bytes(bytes.to_vec())
+#[derive(Debug)]
+pub struct Tracker {
+    base_url: String,
+    info_hash: String,
+    peer_id: String,
+}
+
+impl Tracker {
+    pub fn new(
+        tracker_url: String,
+        info_hash: &[u8; 20],
+        peer_id: &[u8; 20],
+    ) -> Self {
+        Self {
+            base_url: tracker_url,
+            info_hash: util::percent_encode(info_hash),
+            peer_id: util::percent_encode(peer_id),
+        }
+    }
+
+    pub async fn announce(
+        &self,
+        port: u16,
+        bytes_uploaded: u64,
+        bytes_downloaded: u64,
+        bytes_left: u64,
+        event: AnnounceEvent,
+    ) -> Result<AnnouceResponse, AnnounceError> {
+        let url = format!(
+            "{}?info_hash={}&peer_id={}&port={port}&uploaded={bytes_uploaded}&downloaded={bytes_downloaded}&left={bytes_left}&compact=1&event={}",
+            self.base_url,
+            self.info_hash,
+            self.peer_id,
+            event.value(),
+        );
+
+        let bytes = reqwest::get(&url)
+            .await?
+            .bytes()
+            .await?;
+
+        AnnouceResponse::from_bytes(bytes.to_vec())
+    }
 }
