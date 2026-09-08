@@ -2,14 +2,12 @@ mod cli;
 
 use std::{
     fs::File,
-    io::Read,
-    rc::Rc,
-    path::Path,
+    io::{self, Read},
+    path::{Path, PathBuf},
 };
 
+use anyhow::Context;
 use clap::Parser;
-
-use jigsaw_core::bencode::parser::BencodeParser;
 
 use cli::{CliArgs, Commands};
 
@@ -19,10 +17,10 @@ async fn main() {
     let args = CliArgs::parse();
 
     match args.command {
-        Some(Commands::Dump{ file, debug }) => {
-            let display = file.display();
+        Some(Commands::Dump{ torrent_file, output_file, debug }) => {
+            let display = torrent_file.display();
 
-            if let Err(err) = dump_torrent_file(&file, debug) {
+            if let Err(err) = dump_torrent_file(&torrent_file, &output_file, debug) {
                 eprintln!("Unable to dump '{display}': {err}");
             }
         },
@@ -30,20 +28,26 @@ async fn main() {
     }
 }
 
-fn dump_torrent_file(path: &Path, debug: bool) -> anyhow::Result<()> {
-    let mut file = File::open(path)?;
+fn dump_torrent_file(input_path: &Path, output_path: &Option<PathBuf>, debug: bool) -> anyhow::Result<()> {
+    let mut file = File::open(&input_path)?;
     let mut buf = Vec::new();
 
     file.read_to_end(&mut buf)?;
 
-    let mut parser = BencodeParser::new(Rc::from(buf));
-    let parsed_file = parser.parse()?;
-
-    println!("Dumping contents of '{}':", path.display());
-    if debug {
-        println!("{:#?}", parsed_file);
-    } else {
-        println!("{}", parsed_file);
+    match output_path {
+        Some(output_path) => {
+            let mut file = File::create(&output_path)
+                .context("Unable to create the output file")?;
+            
+            println!("Dumping contents of '{}' to '{}'", input_path.display(), output_path.display());
+            jigsaw_core::dump::dump_bencode(&mut file, buf, debug)?;
+        },
+        None => {
+            let mut stdout = io::stdout();
+            
+            println!("Dumping contents of '{}':", input_path.display());
+            jigsaw_core::dump::dump_bencode(&mut stdout, buf, debug)?;
+        }
     }
 
     Ok(())

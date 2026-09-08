@@ -1,10 +1,14 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    rc::Rc,
+};
 
 use sha1::{Digest, Sha1};
 use thiserror::Error;
 
 use jigsaw_bencode::{
     types::{BencodeElement, BencodeList, BencodeDict, ByteString},
+    parser::{self, BencodeParser},
     DecodeError,
     bencode_get,
 };
@@ -18,7 +22,9 @@ pub enum Error {
     #[error("Length value is negative.")]
     NegativeLength,
     #[error(transparent)]
-    Decode(#[from] DecodeError)
+    Decode(#[from] DecodeError),
+    #[error(transparent)]
+    Parse(#[from] parser::Error),
 }
 
 #[derive(Debug)]
@@ -36,6 +42,16 @@ pub struct TorrentFile {
 }
 
 impl TorrentFile {
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, Error> {
+        let mut parser = BencodeParser::new(Rc::from(bytes));
+        let bencode_element = parser.parse()?;
+        
+        match bencode_element {
+            BencodeElement::Dict(dict) => Self::from_bencoded(dict),
+            _ => Err(DecodeError::WrongType("(initial value)".to_string()).into())
+        }
+    }
+
     pub fn from_bencoded(dict: BencodeDict) -> Result<Self, Error> {
         let announce = bencode_get!(dict: required "announce", String => |x: &ByteString| x.to_string())?;
         let (info, info_hash) = bencode_get!(dict: required "info", Dict => errors |info_dict: &BencodeDict| {
