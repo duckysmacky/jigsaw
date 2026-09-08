@@ -12,8 +12,8 @@ use tokio::{
 
 use jigsaw_core::{
     tracker::{Tracker, AnnounceEvent},
-    client::{TorrentClient, SessionCommand},
-    TorrentFile,
+    session::SessionCommand,
+    TorrentFile, TorrentClient,
 };
 
 use cli::{CliArgs, Commands};
