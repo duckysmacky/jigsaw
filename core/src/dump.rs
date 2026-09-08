@@ -1,7 +1,8 @@
 use std::{
     rc::Rc,
-    io,
 };
+
+use tokio::io::{self, AsyncWrite, AsyncWriteExt};
 
 use jigsaw_bencode::parser::{self, BencodeParser};
 
@@ -14,15 +15,20 @@ pub enum Error {
     Parse(#[from] parser::Error),
 }
 
-pub fn dump_bencode<W: io::Write>(destination: &mut W, bytes: Vec<u8>, debug: bool) -> Result<(), Error> {
+pub async fn dump_bencode<W>(destination: &mut W, bytes: Vec<u8>, debug: bool) -> Result<(), Error>
+where
+    W: AsyncWrite + Unpin + ?Sized,
+{
     let mut parser = BencodeParser::new(Rc::from(bytes));
     let parsed_file = parser.parse()?;
 
-    if debug {
-        writeln!(destination, "{:#?}", parsed_file)?;
+    let output = if debug {
+        format!("{:#?}\n", parsed_file)
     } else {
-        writeln!(destination, "{}", parsed_file)?;
-    }
+        format!("{}\n", parsed_file)
+    };
+
+    destination.write_all(output.as_bytes()).await?;
 
     Ok(())
 }

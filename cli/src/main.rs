@@ -1,13 +1,14 @@
 mod cli;
 
 use std::{
-    fs::File,
-    io::{self, Read},
     path::{Path, PathBuf},
 };
 
 use anyhow::Context;
 use clap::Parser;
+use tokio::{
+    fs::File, io::{self, AsyncReadExt}
+};
 
 use jigsaw_core::{
     tracker::{Tracker, AnnounceEvent},
@@ -28,7 +29,7 @@ async fn main() {
         Some(Commands::Dump{ torrent_file, output_file, debug }) => {
             let display = torrent_file.display();
 
-            if let Err(err) = dump_torrent_file(&torrent_file, &output_file, debug) {
+            if let Err(err) = dump_torrent_file(&torrent_file, &output_file, debug).await {
                 eprintln!("Unable to dump '{display}': {err}");
             }
         },
@@ -50,24 +51,22 @@ async fn main() {
     }
 }
 
-fn dump_torrent_file(input_path: &Path, output_path: &Option<PathBuf>, debug: bool) -> anyhow::Result<()> {
-    let mut file = File::open(&input_path)?;
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf)?;
+async fn dump_torrent_file(input_path: &Path, output_path: &Option<PathBuf>, debug: bool) -> anyhow::Result<()> {
+    let bytes = read_file(input_path).await?;
 
     match output_path {
         Some(output_path) => {
-            let mut file = File::create(&output_path)
+            let mut file = File::create(&output_path).await
                 .context("Unable to create the output file")?;
             
             println!("Dumping contents of '{}' to '{}'", input_path.display(), output_path.display());
-            jigsaw_core::dump::dump_bencode(&mut file, buf, debug)?;
+            jigsaw_core::dump::dump_bencode(&mut file, bytes, debug).await?;
         },
         None => {
             let mut stdout = io::stdout();
             
             println!("Dumping contents of '{}':", input_path.display());
-            jigsaw_core::dump::dump_bencode(&mut stdout, buf, debug)?;
+            jigsaw_core::dump::dump_bencode(&mut stdout, bytes, debug).await?;
         }
     }
 
@@ -75,7 +74,7 @@ fn dump_torrent_file(input_path: &Path, output_path: &Option<PathBuf>, debug: bo
 }
 
 async fn announce(client: TorrentClient, torrent_file: &Path) -> anyhow::Result<()> {
-    let bytes = read_file(torrent_file)?;
+    let bytes = read_file(torrent_file).await?;
     let total_size = bytes.len() as u64;
     let torrent = TorrentFile::from_bytes(bytes)?;
     let tracker = Tracker::new(torrent.announce.clone(), &torrent.info_hash, client.peer_id());
@@ -89,7 +88,7 @@ async fn announce(client: TorrentClient, torrent_file: &Path) -> anyhow::Result<
 }
 
 async fn start(mut client: TorrentClient, torrent_file: &Path) -> anyhow::Result<()> {
-    let bytes = read_file(torrent_file)?;
+    let bytes = read_file(torrent_file).await?;
     let total_size = bytes.len() as u64;
     let torrent = TorrentFile::from_bytes(bytes)?;
 
@@ -108,9 +107,9 @@ async fn start(mut client: TorrentClient, torrent_file: &Path) -> anyhow::Result
     Ok(())
 }
 
-fn read_file(path: &Path) -> io::Result<Vec<u8>> {
-    let mut file = File::open(&path)?;
+async fn read_file(path: &Path) -> io::Result<Vec<u8>> {
+    let mut file = File::open(path).await?;
     let mut buf = Vec::new();
-    file.read_to_end(&mut buf)?;
+    file.read_to_end(&mut buf).await?;
     Ok(buf)
 }
