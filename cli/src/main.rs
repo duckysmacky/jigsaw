@@ -75,11 +75,10 @@ async fn dump_torrent_file(input_path: &Path, output_path: &Option<PathBuf>, deb
 
 async fn announce(client: TorrentClient, torrent_file: &Path) -> anyhow::Result<()> {
     let bytes = read_file(torrent_file).await?;
-    let total_size = bytes.len() as u64;
     let torrent = TorrentFile::from_bytes(bytes)?;
     let tracker = Tracker::new(torrent.announce.clone(), &torrent.info_hash, client.peer_id());
 
-    let response = tracker.announce(client.port(), 0, 0, total_size, AnnounceEvent::Started).await?;
+    let response = tracker.announce(client.port(), 0, 0, torrent.total_size, AnnounceEvent::Started).await?;
 
     println!("Got announce response:");
     println!("{:#?}", response);
@@ -89,10 +88,9 @@ async fn announce(client: TorrentClient, torrent_file: &Path) -> anyhow::Result<
 
 async fn start(mut client: TorrentClient, torrent_file: &Path) -> anyhow::Result<()> {
     let bytes = read_file(torrent_file).await?;
-    let total_size = bytes.len() as u64;
     let torrent = TorrentFile::from_bytes(bytes)?;
 
-    let cmd_tx = client.start_session(torrent, total_size).await?;
+    let cmd_tx = client.start_session(torrent).await?;
 
     let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
     while let Some(line) = lines.next_line().await? {

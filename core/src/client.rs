@@ -30,8 +30,8 @@ impl TorrentClient {
         }
     }
 
-    pub async fn start_session(&mut self, torrent: TorrentFile, total_size: u64) -> Result<mpsc::Sender<SessionCommand>, session::Error> {
-        let session = TorrentSession::new(torrent, total_size, &self.peer_id, self.port).await?;
+    pub async fn start_session(&mut self, torrent: TorrentFile) -> Result<mpsc::Sender<SessionCommand>, session::Error> {
+        let session = TorrentSession::new(torrent, &self.peer_id, self.port).await?;
 
         let cmd_tx = session.cmd_tx.clone();
         self.session = Some(session);

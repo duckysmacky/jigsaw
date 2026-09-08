@@ -39,24 +39,25 @@ pub struct TorrentFile {
     pub comment: Option<String>,
     pub created_by: Option<String>,
     pub creation_date: Option<u64>,
-    // TODO: add total size tracking
+    pub total_size: u64,
 }
 
 impl TorrentFile {
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, Error> {
+        let total_size = bytes.len() as u64;
         let mut parser = BencodeParser::new(Rc::from(bytes));
         let bencode_element = parser.parse()?;
         
         match bencode_element {
-            BencodeElement::Dict(dict) => Self::from_bencoded(dict),
+            BencodeElement::Dict(dict) => Self::from_bencode(dict, Some(total_size)),
             _ => Err(DecodeError::WrongType("(initial value)".to_string()).into())
         }
     }
 
-    pub fn from_bencoded(dict: BencodeDict) -> Result<Self, Error> {
+    pub fn from_bencode(dict: BencodeDict, total_size: Option<u64>) -> Result<Self, Error> {
         let announce = bencode_get!(dict: required "announce", String => |x: &ByteString| x.to_string())?;
         let (info, info_hash) = bencode_get!(dict: required "info", Dict => errors |info_dict: &BencodeDict| {
-            let info = Info::from_bencoded(info_dict)?;
+            let info = Info::from_bencode(info_dict)?;
             let info_hash = hash_info_dict(info_dict);
             Ok::<(Info, [u8; 20]), Error>((info, info_hash))
         })?;
@@ -70,7 +71,8 @@ impl TorrentFile {
             info_hash,
             comment,
             created_by,
-            creation_date
+            creation_date,
+            total_size: total_size.unwrap_or(dict.original_bytes().len() as u64),
         })
     }
 }
@@ -94,7 +96,7 @@ pub struct Info {
 }
 
 impl Info {
-    pub fn from_bencoded(info_dict: &BencodeDict) -> Result<Self, Error> {
+    pub fn from_bencode(info_dict: &BencodeDict) -> Result<Self, Error> {
         // either one or the other should be present
         if !info_dict.contains_key(&"files".into()) && !info_dict.contains_key(&"length".into()) {
             return Err(DecodeError::RequiredKeyMissing("files/length".to_string()).into());
@@ -255,7 +257,7 @@ mod tests {
         );
 
         let dict = parse_dict(&torrent);
-        let torrent_file = TorrentFile::from_bencoded(dict).expect("structure should be valid");
+        let torrent_file = TorrentFile::from_bencode(dict, None).expect("structure should be valid");
 
         assert_eq!(torrent_file.announce, "http://tracker.example.com/announce");
         assert_eq!(torrent_file.comment.as_deref(), Some("test comment"));
@@ -276,7 +278,7 @@ mod tests {
         let torrent = format!("d{}{}e", key_value("announce", &bstring("http://tracker.example.com/announce")), key_value("info", &info));
 
         let dict = parse_dict(&torrent);
-        let torrent_file = TorrentFile::from_bencoded(dict).expect("structure should be valid");
+        let torrent_file = TorrentFile::from_bencode(dict, None).expect("structure should be valid");
 
         assert_eq!(torrent_file.comment, None);
         assert_eq!(torrent_file.created_by, None);
@@ -305,7 +307,7 @@ mod tests {
         let torrent = format!("d{}e", key_value("info", &info));
 
         let dict = parse_dict(&torrent);
-        let err = TorrentFile::from_bencoded(dict).unwrap_err();
+        let err = TorrentFile::from_bencode(dict, None).unwrap_err();
 
         assert!(matches!(err, Error::Decode(DecodeError::RequiredKeyMissing(key)) if key == "announce"));
     }
@@ -322,7 +324,7 @@ mod tests {
         let torrent = format!("d{}{}e", key_value("announce", &bstring("http://tracker.example.com/announce")), key_value("info", &info));
 
         let dict = parse_dict(&torrent);
-        let err = TorrentFile::from_bencoded(dict).unwrap_err();
+        let err = TorrentFile::from_bencode(dict, None).unwrap_err();
 
         assert!(matches!(err, Error::PiecesBytesLengthError));
     }

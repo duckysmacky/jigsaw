@@ -64,18 +64,18 @@ pub struct TorrentSession {
 }
 
 impl TorrentSession {
-    pub async fn new(torrent: TorrentFile, total_size: u64, peer_id: &[u8; 20], port: u16) -> Result<Self, Error> {
+    pub async fn new(torrent: TorrentFile, peer_id: &[u8; 20], port: u16) -> Result<Self, Error> {
         let tracker = Tracker::new(torrent.announce.clone(), &torrent.info_hash, peer_id);
 
         info!("doing an initial announce");
-        let response = tracker.announce(port, 0, 0, total_size, AnnounceEvent::Started).await?;
+        let response = tracker.announce(port, 0, 0, torrent.total_size, AnnounceEvent::Started).await?;
         let interval_duration = Duration::from_secs(response.interval);
         let peers = response.peers;
         info!(peers = ?peers, "received initial peers");
         
         let mut interval = tokio::time::interval_at(Instant::now() + interval_duration, interval_duration);
 
-        let state = Arc::new(Mutex::new(SessionState::new(peers, total_size)));
+        let state = Arc::new(Mutex::new(SessionState::new(peers, torrent.total_size)));
         let _state = Arc::clone(&state);
 
         let (cmd_tx, mut cmd_rx) = mpsc::channel(8);
