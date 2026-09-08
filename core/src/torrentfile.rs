@@ -3,22 +3,22 @@ use std::path::PathBuf;
 use sha1::{Digest, Sha1};
 use thiserror::Error;
 
-use jigsaw_bencode::{bencode_get, BencodeElement, BencodeList, ByteString};
-
-use crate::bencode::BencodeDict;
+use jigsaw_bencode::{
+    types::{BencodeElement, BencodeList, BencodeDict, ByteString},
+    DecodeError,
+    bencode_get,
+};
 
 // TODO: bittorrent v2 does things differently
 
 #[derive(Error, Debug)]
-pub enum StructureError {
-    #[error("Field '{0}' is of wrong type.")]
-    WrongType(String),
-    #[error("Missing required key '{0}'.")]
-    RequiredKeyMissing(String),
+pub enum Error {
     #[error("Pieces bytestring length isn't divisible by 20.")]
     PiecesBytesLengthError,
     #[error("Length value is negative.")]
     NegativeLength,
+    #[error(transparent)]
+    Decode(#[from] DecodeError)
 }
 
 #[derive(Debug)]
@@ -36,12 +36,12 @@ pub struct TorrentFile {
 }
 
 impl TorrentFile {
-    pub fn from_bencoded(dict: BencodeDict) -> Result<Self, StructureError> {
+    pub fn from_bencoded(dict: BencodeDict) -> Result<Self, Error> {
         let announce = bencode_get!(dict: required "announce", String => |x: &ByteString| x.to_string())?;
         let (info, info_hash) = bencode_get!(dict: required "info", Dict => errors |info_dict: &BencodeDict| {
             let info = Info::from_bencoded(info_dict)?;
             let info_hash = hash_info_dict(info_dict);
-            Ok((info, info_hash))
+            Ok::<(Info, [u8; 20]), Error>((info, info_hash))
         })?;
         let comment = bencode_get!(dict: optional "comment", String => |x: &ByteString| x.to_string())?;
         let created_by = bencode_get!(dict: optional "created by", String => |x: &ByteString| x.to_string())?;
@@ -77,10 +77,10 @@ pub struct Info {
 }
 
 impl Info {
-    pub fn from_bencoded(info_dict: &BencodeDict) -> Result<Self, StructureError> {
+    pub fn from_bencoded(info_dict: &BencodeDict) -> Result<Self, Error> {
         // either one or the other should be present
         if !info_dict.contains_key(&"files".into()) && !info_dict.contains_key(&"length".into()) {
-            return Err(StructureError::RequiredKeyMissing("files/length".to_string()));
+            return Err(DecodeError::RequiredKeyMissing("files/length".to_string()).into());
         }
 
         let name = bencode_get!(info_dict: required "name", String => |x: &ByteString| x.to_string())?;
@@ -94,13 +94,13 @@ impl Info {
                         let path = bencode_get!(entry_dict: required "path", List => errors |path_list: &BencodeList| path_list.iter()
                             .try_fold(PathBuf::new(), |parts, part| match part {
                                 BencodeElement::String(part) => Ok(parts.join(part.to_string())),
-                                _ => Err(StructureError::WrongType("(path part)".to_string())),
+                                _ => Err(DecodeError::WrongType("(path part)".to_string())),
                             })
                         )?;
 
                         Ok(FileEntry { length, path })
                     }
-                    _ => Err(StructureError::WrongType("(file entry)".to_string()))
+                    _ => Err(DecodeError::WrongType("(file entry)".to_string()))
                 })
                 .collect()
             )?;
@@ -108,7 +108,7 @@ impl Info {
             FileMode::MultipleFiles { files }
         } else {
             let length = bencode_get!(info_dict: required "length", Int => errors |len: &i64| {
-                if *len < 0 { return Err(StructureError::NegativeLength) }
+                if *len < 0 { return Err(Error::NegativeLength) }
                 Ok(*len as u64)
             })?;
 
@@ -116,13 +116,13 @@ impl Info {
         };
 
         let piece_length = bencode_get!(info_dict: required "piece length", Int => errors |len: &i64| {
-            if *len < 0 { return Err(StructureError::NegativeLength) }
+            if *len < 0 { return Err(Error::NegativeLength) }
             Ok(*len as u32)
         })?;
 
         let pieces_hashes = bencode_get!(info_dict: required "pieces", String => errors |bytes: &ByteString| {
             if bytes.len() % 20 != 0 {
-                return Err(StructureError::PiecesBytesLengthError);
+                return Err(Error::PiecesBytesLengthError);
             }
             // unwrap will not fail, the chunk size is guaranteed.
             Ok(bytes.bytes()
@@ -154,11 +154,14 @@ pub struct FileEntry {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::rc::Rc;
 
-    use jigsaw_bencode::BencodeParser;
-
-    use super::*;
+    use jigsaw_bencode::{
+        parser::BencodeParser,
+        DecodeError,
+    };
 
     fn bstring(s: &str) -> String {
         format!("{}:{}", s.len(), s)
@@ -287,7 +290,7 @@ mod tests {
         let dict = parse_dict(&torrent);
         let err = TorrentFile::from_bencoded(dict).unwrap_err();
 
-        assert!(matches!(err, StructureError::RequiredKeyMissing(key) if key == "announce"));
+        assert!(matches!(err, Error::Decode(DecodeError::RequiredKeyMissing(key)) if key == "announce"));
     }
 
     #[test]
@@ -304,6 +307,6 @@ mod tests {
         let dict = parse_dict(&torrent);
         let err = TorrentFile::from_bencoded(dict).unwrap_err();
 
-        assert!(matches!(err, StructureError::PiecesBytesLengthError));
+        assert!(matches!(err, Error::PiecesBytesLengthError));
     }
 }

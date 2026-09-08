@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use thiserror::Error;
 
-use crate::{BencodeElement, BencodeDict, BencodeList, ByteString, BencodeNumber, BencodeElementMap, OriginalBytes};
+use crate::types::{BencodeElement, BencodeDict, BencodeList, ByteString, BencodeNumber, BencodeElementMap, OriginalBytes};
 
 #[derive(Error, Debug)]
 pub enum Error {

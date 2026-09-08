@@ -9,7 +9,7 @@ use std::{
 
 use clap::Parser;
 
-use jigsaw_core::bencode::BencodeParser;
+use jigsaw_core::bencode::parser::BencodeParser;
 
 use cli::{CliArgs, Commands};
 
