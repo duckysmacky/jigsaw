@@ -28,5 +28,12 @@ pub enum Commands {
         #[arg(short, long)]
         debug: bool,
     },
+
+    /// Perform initial announce and get a response from the tracker
+    Announce {
+        /// Path to the .torrent file
+        #[arg(value_name = "TORRENT_FILE")]
+        torrent_file: PathBuf,
+    }
 }
 
