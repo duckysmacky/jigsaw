@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use thiserror::Error;
 
-use crate::{BencodeElement, BencodeDict, BencodeList, ByteString, BencodeNumber, BencodeElementMap, OriginalBytes};
+use crate::types::{BencodeElement, BencodeDict, BencodeList, ByteString, BencodeNumber, BencodeElementMap, OriginalBytes};
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -68,7 +68,6 @@ impl BencodeParser {
             b'l' => { Ok(BencodeElement::List(self.parse_list()?)) },
             b'i' => { Ok(BencodeElement::Int(self.parse_number()?)) },
             b'0'..=b'9' => { Ok(BencodeElement::String(self.parse_string()?)) }
-            // TODO: error out
             _ => { Err(Error::UnexpectedCharacter) }
         }
     }
@@ -124,9 +123,8 @@ impl BencodeParser {
         }
 
         if let Ok(strlen) = usize::from_str_radix(&digits, 10) {
-            self.advance()?; // from ':'
-            let str = ByteString::from(self.bytes[self.idx..self.idx + strlen].to_vec());
-            self.advance_by(strlen)?;
+            self.advance_by(strlen + 1)?; // ':' + the string
+            let str = ByteString::from(self.bytes[self.idx - strlen..self.idx].to_vec());
 
             return Ok(str);
         }
@@ -156,8 +154,6 @@ impl BencodeParser {
 mod tests {
     use super::*;
 
-    // TODO: add more tests
-
     #[test]
     fn correct_decoding() {
         let bencoded = b"d3:bar4:spam3:fooi-42e4:listli43ei44ei-73eee";
@@ -177,5 +173,83 @@ mod tests {
         let expected = BencodeElement::Dict(BencodeDict::new(map, original));
 
         assert_eq!(expected, decoder.parse().unwrap());
+    }
+
+    #[test]
+    fn eof_error() {
+        let bencoded = b"d3:bar4:spam3:fooi-42e4:listli43ei44ei-73ee";
+        let bytes = Rc::from(bencoded.to_vec());
+        let mut decoder = BencodeParser::new(Rc::clone(&bytes));
+
+        assert!(matches!(decoder.parse_dict().expect_err("should have unexpected eof!"), Error::UnexpectedEOF));
+    }
+
+    #[test]
+    fn zero_length_string() {
+        let bencoded = b"d0:i73ee"; // 0 length strings are valid
+        let bytes = Rc::from(bencoded.to_vec());
+        let mut decoder = BencodeParser::new(Rc::clone(&bytes));
+
+        let mut map = BencodeElementMap::new();
+        map.insert("".into(), BencodeElement::Int(73i64.into()));
+
+        let original = OriginalBytes::new(Rc::clone(&bytes), 0, bytes.len() - 1);
+        let expected = BencodeDict::new(map, original);
+
+        assert_eq!(decoder.parse_dict().expect("zero length string should be valid!"), expected);
+    }
+
+    #[test]
+    fn negative_string_length() {
+        let bencoded = b"d-1:i73ee";
+        let bytes = Rc::from(bencoded.to_vec());
+        let mut decoder = BencodeParser::new(Rc::clone(&bytes));
+
+        assert!(matches!(decoder.parse_dict().expect_err("negative string length should be invalid!"), Error::NegativeStringLength));
+    }
+
+    #[test]
+    fn invalid_string_length() {
+        let bencoded = b"d3lmao1:testi73ee";
+        let bytes = Rc::from(bencoded.to_vec());
+        let mut decoder = BencodeParser::new(Rc::clone(&bytes));
+
+        assert!(matches!(decoder.parse_dict().expect_err("string length should be invalid!"), Error::InvalidInteger(int) if int == "3lmao1"));
+    }
+
+    #[test]
+    fn string_length_too_long() {
+        let bencoded = b"d7342:testi43ee";
+        let bytes = Rc::from(bencoded.to_vec());
+        let mut decoder = BencodeParser::new(Rc::clone(&bytes));
+
+        assert!(matches!(decoder.parse_dict().expect_err("string reading should have gone out of bounds!"), Error::UnexpectedEOF));
+    }
+
+    #[test]
+    fn unexpected_character() {
+        let bencoded = b"d4:spam4:eggs3:foobi43ee";
+        let bytes = Rc::from(bencoded.to_vec());
+        let mut decoder = BencodeParser::new(Rc::clone(&bytes));
+
+        assert!(matches!(decoder.parse_dict().expect_err("character should be unexpected!"), Error::UnexpectedCharacter));
+    }
+
+    #[test]
+    fn invalid_integer() {
+        let bencoded = b"d4:spami3dsee";
+        let bytes = Rc::from(bencoded.to_vec());
+        let mut decoder = BencodeParser::new(Rc::clone(&bytes));
+
+        assert!(matches!(decoder.parse_dict().expect_err("integer should be invalid!"), Error::InvalidInteger(int) if int == "3ds"));
+    }
+
+    #[test]
+    fn duplicate_keys() {
+        let bencoded = b"d4:spami3e4:spami4ee";
+        let bytes = Rc::from(bencoded.to_vec());
+        let mut decoder = BencodeParser::new(Rc::clone(&bytes));
+
+        assert!(matches!(decoder.parse_dict().expect_err("should have caught duplicate keys!"), Error::DuplicateKey(key) if key == "spam"));
     }
 }
